@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'screens/welcome_screen.dart';
+import 'services/notification_service.dart';
 import 'state/app_repository.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.instance.init();
   final repo = AppRepository();
   await repo.init();
   runApp(

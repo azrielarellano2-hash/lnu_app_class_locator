@@ -20,7 +20,7 @@ class AppDatabase {
     final path = p.join(dir, 'lnu_smartpath.db');
     return openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE profile (
@@ -74,6 +74,7 @@ class AppDatabase {
           );
         ''');
 
+        await _createExtendedTables(db);
         await _seedRooms(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
@@ -94,8 +95,69 @@ class AppDatabase {
         if (oldVersion < 6) {
           await db.execute('ALTER TABLE schedule_slots ADD COLUMN day_pattern TEXT');
         }
+        if (oldVersion < 7) {
+          await _createExtendedTables(db);
+        }
       },
     );
+  }
+
+  Future<void> _createExtendedTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS teachers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        position TEXT,
+        department TEXT,
+        college TEXT,
+        email TEXT,
+        contact_number TEXT,
+        profile_photo_path TEXT,
+        bio TEXT,
+        years_of_service INTEGER,
+        office_hours TEXT,
+        office_room TEXT,
+        subjects_taught TEXT,
+        social_links TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS schedule_items (
+        id TEXT PRIMARY KEY,
+        subject_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        due_date TEXT,
+        due_time TEXT,
+        is_completed INTEGER NOT NULL DEFAULT 0,
+        priority TEXT,
+        color_tag TEXT,
+        attachment_paths TEXT,
+        repeat_rule TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS students (
+        id TEXT PRIMARY KEY,
+        id_number TEXT,
+        name TEXT,
+        college TEXT,
+        course TEXT,
+        year TEXT,
+        section TEXT,
+        profile_photo_path TEXT,
+        bio TEXT,
+        semester TEXT,
+        academic_year TEXT,
+        form_number TEXT
+      );
+    ''');
+    await db.insert('students', {'id': 'default'}, conflictAlgorithm: ConflictAlgorithm.ignore);
   }
 
   Future<void> _seedRooms(Database db) async {

@@ -1,15 +1,18 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/models.dart';
+import '../../models/schedule_item.dart';
 import '../../state/app_repository.dart';
 import '../../utils/formatters.dart';
-import '../../utils/schedule_day_filter.dart';
-import '../../widgets/schedule_class_card.dart';
-import '../../widgets/schedule_class_detail_sheet.dart';
+import '../../widgets/empty_state.dart';
+import '../../widgets/schedule_detail_sheet.dart';
+import '../../widgets/shimmer_box.dart';
+import '../../widgets/weekly_schedule_grid.dart';
+import '../eslip_printable_view.dart';
+import '../student_profile_screen.dart';
 
 class ScheduleTab extends StatefulWidget {
   const ScheduleTab({super.key});
@@ -24,26 +27,26 @@ class _ScheduleTabState extends State<ScheduleTab> {
   bool _loading = true;
   AppRepository? _repo;
   Timer? _reloadDebounce;
+  Map<String, String> _customLabels = {};
+  bool _gridView = true;
 
   Future<void> _load(AppRepository repo, {bool showLoader = true}) async {
-    if (showLoader) {
-      setState(() => _loading = true);
-    }
+    if (showLoader) setState(() => _loading = true);
     try {
       final monday = mondayOfWeekContaining(_selected);
       final data = await repo.scheduleWeekly(weekStart: isoDate(monday));
-      final savedTotal = (await repo.allDistinctClasses()).length;
+      final items = await repo.listAllScheduleItems();
+      final labels = <String, String>{};
+      for (final i in items) {
+        if (i.type == ScheduleItemType.customLabel && i.colorTag != null) {
+          labels[i.subjectId] = i.colorTag!;
+        }
+      }
       if (!mounted) return;
-      final wd =
-          DateTime(_selected.year, _selected.month, _selected.day).weekday -
-              DateTime.monday;
-      final daySlots =
-          data.days.length > wd ? data.days[wd].slots : <ScheduleSlot>[];
-      debugPrint(
-        'Schedule: ${daySlots.length} on ${weekdayNames[wd.clamp(0, 6)]}, '
-        '$savedTotal saved from e-slip',
-      );
-      setState(() => _weekly = data);
+      setState(() {
+        _weekly = data;
+        _customLabels = labels;
+      });
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -62,8 +65,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
   WeeklyDay? _dayForSelected() {
     final w = _weekly;
     if (w == null) return null;
-    final key =
-        isoDate(DateTime(_selected.year, _selected.month, _selected.day));
+    final key = isoDate(DateTime(_selected.year, _selected.month, _selected.day));
     for (final d in w.days) {
       if (d.dateIso.startsWith(key)) return d;
     }
@@ -94,6 +96,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
     final repo = context.watch<AppRepository>();
     final day = _dayForSelected();
     final slots = day?.slots ?? [];
+    final hasAnyClass = _weekly?.days.any((d) => d.slots.isNotEmpty) ?? false;
 
     return Scaffold(
       body: RefreshIndicator(
@@ -120,33 +123,58 @@ class _ScheduleTabState extends State<ScheduleTab> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Row(
+                    Row(
                       children: [
-                        Icon(Icons.calendar_month, color: Colors.white),
-                        SizedBox(width: 8),
-                        Expanded(
+                        const Expanded(
                           child: Text(
-                            'LNU SmartPath',
+                            'Weekly schedule',
                             style: TextStyle(
                               color: Colors.white,
+                              fontSize: 22,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),
+                        IconButton(
+                          tooltip: 'Student profile',
+                          onPressed: () => Navigator.of(context).push<void>(
+                            MaterialPageRoute(
+                              builder: (_) => const StudentProfileScreen(),
+                            ),
+                          ),
+                          icon: const Icon(Icons.person_outline, color: Colors.white),
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Weekly schedule',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
                     Text(
-                      'Updates when you add or scan classes',
+                      'Tap any class block for details',
                       style: TextStyle(color: Colors.white.withValues(alpha: 0.9)),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: hasAnyClass
+                              ? () => openPrintableFromSaved(context)
+                              : null,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Colors.white54),
+                          ),
+                          icon: const Icon(Icons.print, size: 18),
+                          label: const Text('Official schedule'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () => setState(() => _gridView = !_gridView),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Colors.white54),
+                          ),
+                          icon: Icon(_gridView ? Icons.view_list : Icons.grid_view),
+                          label: Text(_gridView ? 'List view' : 'Grid view'),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -158,22 +186,13 @@ class _ScheduleTabState extends State<ScheduleTab> {
                   height: 96,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                     itemCount: _weekly!.days.length,
                     itemBuilder: (context, i) {
                       final d = _weekly!.days[i];
-                      final dt =
-                          DateTime.tryParse(d.dateIso) ?? DateTime.now();
+                      final dt = DateTime.tryParse(d.dateIso) ?? DateTime.now();
                       final sel = isoDate(dt) ==
-                          isoDate(DateTime(
-                            _selected.year,
-                            _selected.month,
-                            _selected.day,
-                          ));
-                      final hasClasses = d.slots.isNotEmpty;
+                          isoDate(DateTime(_selected.year, _selected.month, _selected.day));
                       return Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: InkWell(
@@ -181,14 +200,9 @@ class _ScheduleTabState extends State<ScheduleTab> {
                           onTap: () => setState(() => _selected = dt),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 10,
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                             decoration: BoxDecoration(
-                              color: sel
-                                  ? Colors.green.shade700
-                                  : Colors.grey.shade200,
+                              color: sel ? Colors.green.shade700 : Colors.grey.shade200,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Column(
@@ -198,8 +212,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
                                   d.label,
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
-                                    color:
-                                        sel ? Colors.white : Colors.black87,
+                                    color: sel ? Colors.white : Colors.black87,
                                     fontSize: 13,
                                   ),
                                 ),
@@ -207,21 +220,9 @@ class _ScheduleTabState extends State<ScheduleTab> {
                                   '${dt.day}',
                                   style: TextStyle(
                                     fontWeight: FontWeight.w600,
-                                    color:
-                                        sel ? Colors.white : Colors.black87,
+                                    color: sel ? Colors.white : Colors.black87,
                                   ),
                                 ),
-                                if (hasClasses)
-                                  Container(
-                                    margin: const EdgeInsets.only(top: 4),
-                                    width: 6,
-                                    height: 6,
-                                    decoration: BoxDecoration(
-                                      color:
-                                          sel ? Colors.white : Colors.green,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
                               ],
                             ),
                           ),
@@ -237,47 +238,80 @@ class _ScheduleTabState extends State<ScheduleTab> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.calendar_today_outlined, size: 20),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            MaterialLocalizations.of(context).formatFullDate(
-                              DateTime(
-                                _selected.year,
-                                _selected.month,
-                                _selected.day,
-                              ),
-                            ),
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ),
-                      ],
+                    if (_loading) ...[
+                      const ShimmerBox(height: 320),
+                      const SizedBox(height: 16),
+                      const ShimmerBox(height: 80),
+                    ] else if (!hasAnyClass)
+                      EmptyState(
+                        icon: Icons.calendar_month_outlined,
+                        title: 'No schedule yet',
+                        message:
+                            'Scan your enrolment e-slip to build your weekly grid.',
+                        actionLabel: 'Open extractor',
+                        onAction: () {
+                          DefaultTabController.of(context);
+                        },
+                      )
+                    else if (_gridView && _weekly != null) ...[
+                      Text(
+                        'Time grid (Mon–Sat)',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      WeeklyScheduleGrid(
+                        week: _weekly!,
+                        customLabels: _customLabels,
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                    Text(
+                      MaterialLocalizations.of(context).formatFullDate(
+                        DateTime(_selected.year, _selected.month, _selected.day),
+                      ),
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 12),
-                    if (_loading)
-                      const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: CircularProgressIndicator(),
-                        ),
-                      )
-                    else if (slots.isEmpty)
+                    if (!_loading && slots.isEmpty)
                       const Card(
                         child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Text(
-                            'No classes for this day. Use Extractor to scan your full e-slip, '
-                            'then tap Import all classes.',
-                          ),
+                          padding: EdgeInsets.all(20),
+                          child: Text('No classes on this day.'),
                         ),
                       )
-                    else
+                    else if (!_loading)
                       ...slots.map(
-                        (s) => ScheduleClassCard.fromSlot(
-                          slot: s,
-                          onTap: () => showScheduleClassDetail(context, s),
+                        (s) => Card(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () => showScheduleDetailSheet(
+                              context,
+                              slot: s,
+                              heroTag: 'subject_${s.id}',
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          s.subjectName,
+                                          style: const TextStyle(fontWeight: FontWeight.w700),
+                                        ),
+                                        Text(formatTimeRange(s.startTime, s.endTime)),
+                                        Text(s.roomCode),
+                                      ],
+                                    ),
+                                  ),
+                                  const Icon(Icons.chevron_right),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                   ],

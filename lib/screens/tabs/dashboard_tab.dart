@@ -7,7 +7,8 @@ import '../../models/models.dart';
 import '../../navigation/home_tabs.dart';
 import '../../state/app_repository.dart';
 import '../../widgets/schedule_class_card.dart';
-import '../../widgets/schedule_class_detail_sheet.dart';
+import '../../screens/student_profile_screen.dart';
+import '../../widgets/schedule_detail_sheet.dart';
 
 class DashboardTab extends StatefulWidget {
   const DashboardTab({super.key, required this.onOpenTab});
@@ -159,6 +160,15 @@ class _DashboardTabState extends State<DashboardTab> {
                             style: TextStyle(color: Colors.white.withValues(alpha: 0.88)),
                           ),
                         ),
+                        IconButton(
+                          tooltip: 'Student profile',
+                          onPressed: () => Navigator.of(context).push<void>(
+                            MaterialPageRoute(
+                              builder: (_) => const StudentProfileScreen(),
+                            ),
+                          ),
+                          icon: const Icon(Icons.person_outline, color: Colors.white),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 16),
@@ -240,7 +250,11 @@ class _DashboardTabState extends State<DashboardTab> {
                     ..._today.map(
                       (s) => ScheduleClassCard.fromSlot(
                         slot: s,
-                        onTap: () => showScheduleClassDetail(context, s),
+                        onTap: () => showScheduleDetailSheet(
+                          context,
+                          slot: s,
+                          heroTag: 'subject_${s.id}',
+                        ),
                         leading: Icon(
                           Icons.schedule_rounded,
                           color: Theme.of(context).colorScheme.primary,

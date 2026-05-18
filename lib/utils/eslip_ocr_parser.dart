@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../data/day_codes.dart';
 import '../models/parsed_schedule_display.dart';
+import '../models/validated_eslip_row.dart';
 import 'formatters.dart';
 import 'schedule_field_parser.dart';
 
@@ -23,6 +24,11 @@ class EslipParsedProfile {
     this.college,
     this.course,
     this.section,
+    this.year,
+    this.semester,
+    this.academicYear,
+    this.formNumber,
+    this.enrolmentDate,
   });
 
   final String? studentId;
@@ -30,6 +36,11 @@ class EslipParsedProfile {
   final String? college;
   final String? course;
   final String? section;
+  final String? year;
+  final String? semester;
+  final String? academicYear;
+  final String? formNumber;
+  final String? enrolmentDate;
 }
 
 class EslipParseOutcome {
@@ -37,11 +48,17 @@ class EslipParseOutcome {
     required this.profile,
     required this.classes,
     required this.warnings,
+    required this.validatedRows,
+    required this.overallConfidencePercent,
+    this.headerDetected = false,
   });
 
   final EslipParsedProfile profile;
   final List<EslipClassRow> classes;
   final List<String> warnings;
+  final List<ValidatedEslipRow> validatedRows;
+  final double overallConfidencePercent;
+  final bool headerDetected;
 }
 
 // --- LNU e-slip patterns ---
@@ -587,13 +604,266 @@ EslipParsedProfile _parseProfile(String text) {
     caseSensitive: false,
   ).firstMatch(text)?.group(1)?.trim();
 
+  final semester = RegExp(
+    r'(First|Second)\s+Semester\s+(\d{4}-\d{4})',
+    caseSensitive: false,
+  ).firstMatch(text);
+  final formNo = RegExp(
+    r'Form\s*No\.?\s*([^\n]+)',
+    caseSensitive: false,
+  ).firstMatch(text)?.group(1)?.trim();
+  final year = RegExp(
+    r'Year\s*:?\s*([^\n,]+)',
+    caseSensitive: false,
+  ).firstMatch(text)?.group(1)?.trim();
+  final date = RegExp(
+    r'Date\s*:?\s*([^\n]+)',
+    caseSensitive: false,
+  ).firstMatch(text)?.group(1)?.trim();
+
   return EslipParsedProfile(
     studentId: studentId,
     fullName: fullName,
     college: college,
     course: course,
     section: section,
+    year: year,
+    semester: semester?.group(1),
+    academicYear: semester?.group(2),
+    formNumber: formNo,
+    enrolmentDate: date,
   );
+}
+
+// --- Multi-pass validation (Pass 1–4) ---
+
+final RegExp _headerRowPattern = RegExp(
+  r'CODE\s+SUBJECT\s+DESCRIPTION',
+  caseSensitive: false,
+);
+
+bool detectEslipTableHeader(String text) => _headerRowPattern.hasMatch(text);
+
+({String units, String lab}) _extractUnitsAndLab(
+  String afterCode,
+  int timeStart,
+) {
+  if (timeStart <= 0) return (units: '', lab: '');
+  var chunk = afterCode.substring(0, timeStart).trim();
+  chunk = chunk.replaceAll(RegExp(r'\s+'), ' ');
+  final m = RegExp(r'^(.+?)\s+(\d{1,2})(?:\s+(\d))?\s*$').firstMatch(chunk);
+  if (m == null) {
+    final tail = RegExp(r'\s+(\d{1,2})(?:\s+(\d))?\s*$').firstMatch(chunk);
+    if (tail == null) return (units: '', lab: '');
+    return (
+      units: tail.group(1) ?? '',
+      lab: tail.group(2) ?? '',
+    );
+  }
+  return (
+    units: m.group(2) ?? '',
+    lab: m.group(3) ?? '',
+  );
+}
+
+String _buildScheduleRaw(String collapsed) {
+  final timeMatch = _locateTimeInRow(collapsed);
+  if (timeMatch == null) return '';
+  final afterTime = collapsed.substring(timeMatch.end).trim();
+  final roomMatch = _locateRoomAfterTime(afterTime);
+  if (roomMatch == null) return timeMatch.group(0) ?? '';
+  final dayToken = _extractDayToken(afterTime, roomMatch.group(0)!);
+  final dayPart = dayToken != null ? ' $dayToken' : '';
+  return '${timeMatch.group(0)!}$dayPart ${roomMatch.group(0)!}'.trim();
+}
+
+String? _extractSectionFromRow(String collapsed) {
+  final m = _sectionCode.firstMatch(collapsed);
+  return m?.group(0);
+}
+
+RowConfidenceLevel _confidenceLevel(double score) {
+  if (score >= 0.85) return RowConfidenceLevel.high;
+  if (score >= 0.55) return RowConfidenceLevel.medium;
+  return RowConfidenceLevel.low;
+}
+
+ValidatedEslipRow _validateParsedRow(String collapsed, EslipClassRow row) {
+  final p = row.parsed;
+  final issues = <String>[];
+  var score = 1.0;
+
+  final timeMatch = _locateTimeInRow(collapsed);
+  final beforeTime = timeMatch != null
+      ? collapsed.substring(0, timeMatch.start)
+      : collapsed;
+  final codeMatch = _bestSubjectBeforeTime(beforeTime);
+  final afterCode = codeMatch != null
+      ? collapsed.substring(codeMatch.end)
+      : '';
+  final timeOffset = timeMatch != null && codeMatch != null
+      ? timeMatch.start - codeMatch.end
+      : 0;
+
+  final description = _extractDescription(
+        afterCode,
+        timeOffset,
+        p.subjectCode,
+      ) ??
+      p.subjectTitle;
+  final unitsLab = _extractUnitsAndLab(afterCode, timeOffset);
+  final scheduleRaw = _buildScheduleRaw(collapsed);
+  final section = _extractSectionFromRow(collapsed) ?? '';
+
+  if (p.subjectCode.trim().isEmpty) {
+    issues.add('Missing subject code');
+    score -= 0.35;
+  }
+  if (description.trim().isEmpty) {
+    issues.add('Missing description');
+    score -= 0.15;
+  }
+  if (scheduleRaw.isEmpty) {
+    issues.add('Missing schedule');
+    score -= 0.35;
+  }
+  if (p.roomCode.trim().isEmpty) {
+    issues.add('Missing room');
+    score -= 0.2;
+  }
+  if (p.instructor.trim().isEmpty) {
+    issues.add('Missing instructor');
+    score -= 0.1;
+  }
+  if (section.isEmpty) {
+    issues.add('Missing section');
+    score -= 0.05;
+  }
+
+  final fieldParse = scheduleRaw.isNotEmpty
+      ? parseScheduleField(scheduleRaw, log: false)
+      : null;
+  if (fieldParse == null && scheduleRaw.isNotEmpty) {
+    issues.add('Could not parse schedule time/days/room');
+    score -= 0.25;
+  }
+
+  score = score.clamp(0.0, 1.0);
+  final level = _confidenceLevel(score);
+
+  return ValidatedEslipRow(
+    enrollmentCode: row.enrollmentCode,
+    subjectCode: p.subjectCode,
+    description: description.trim(),
+    units: unitsLab.units,
+    lab: unitsLab.lab,
+    scheduleRaw: scheduleRaw,
+    section: section,
+    instructor: p.instructor,
+    parsed: p,
+    confidence: level,
+    confidenceScore: score,
+    fieldIssues: issues,
+  );
+}
+
+ValidatedEslipRow _validateFailedSegment(String collapsed) {
+  final issues = <String>['Incomplete row — review all fields'];
+  var score = 0.25;
+  String subjectCode = '';
+  final codeMatch = _bestSubjectBeforeTime(collapsed);
+  if (codeMatch != null) {
+    subjectCode = codeMatch.group(0)!;
+    score += 0.15;
+  } else {
+    issues.add('Missing subject code');
+  }
+
+  final scheduleRaw = _buildScheduleRaw(collapsed);
+  ParsedScheduleDisplay? parsed;
+  if (scheduleRaw.isNotEmpty) {
+    final field = parseScheduleField(scheduleRaw, log: false);
+    if (field != null) {
+      parsed = ParsedScheduleDisplay(
+        startTime: field.startTime,
+        endTime: field.endTime,
+        subjectCode: subjectCode.isNotEmpty ? subjectCode : 'CLASS',
+        subjectTitle: '',
+        subjectName: subjectCode,
+        roomCode: field.roomCode,
+        instructor: _extractInstructor(collapsed) ?? '',
+        dayPattern: field.dayPattern,
+        dayToken: field.dayToken,
+        startTimeRaw: field.startTimeRaw,
+        endTimeRaw: field.endTimeRaw,
+      );
+      score += 0.25;
+    }
+  }
+
+  return ValidatedEslipRow(
+    enrollmentCode: _rowCode.firstMatch(collapsed)?.group(0)?.replaceAll(' ', ''),
+    subjectCode: subjectCode,
+    description: '',
+    units: '',
+    lab: '',
+    scheduleRaw: scheduleRaw,
+    section: _extractSectionFromRow(collapsed) ?? '',
+    instructor: _extractInstructor(collapsed) ?? '',
+    parsed: parsed,
+    confidence: _confidenceLevel(score),
+    confidenceScore: score.clamp(0.0, 1.0),
+    fieldIssues: issues,
+  );
+}
+
+List<ValidatedEslipRow> _buildValidatedRows(
+  String text,
+  List<EslipClassRow> classes,
+  List<String> warnings,
+) {
+  final collapsed = _collapseRowText(text);
+  final segments = <String>{
+    ..._segmentsByEnrolmentLines(text.split('\n')),
+    ..._segmentsByEnrolmentCode(collapsed),
+    ..._splitRowSegments(collapsed),
+    ..._segmentsBySubjectCode(text),
+  }.where((s) => s.length >= 12).toList();
+
+  final validated = <ValidatedEslipRow>[];
+  final usedKeys = <String>{};
+
+  for (final row in classes) {
+    final key = _rowKey(row);
+    usedKeys.add(key);
+    String? segment;
+    for (final s in segments) {
+      if (s.contains(row.parsed.subjectCode)) {
+        segment = s;
+        break;
+      }
+    }
+    validated.add(_validateParsedRow(segment ?? '', row));
+  }
+
+  for (final seg in segments) {
+    final row = _parseEslipRow(seg);
+    if (row != null) continue;
+    if (!_subjectCode.hasMatch(seg)) continue;
+    final code = _bestSubjectBeforeTime(_collapseRowText(seg))?.group(0);
+    if (code == null) continue;
+    if (validated.any((v) => v.subjectCode == code)) continue;
+    validated.add(_validateFailedSegment(_collapseRowText(seg)));
+    warnings.add('Row $code flagged for manual review');
+  }
+
+  return validated;
+}
+
+double _overallConfidence(List<ValidatedEslipRow> rows) {
+  if (rows.isEmpty) return 0;
+  final sum = rows.fold<double>(0, (a, r) => a + r.confidenceScore);
+  return (sum / rows.length * 100).roundToDouble();
 }
 
 List<String> _dedupeWarnings(List<String> warnings) {
@@ -641,10 +911,24 @@ EslipParseOutcome parseEslipOcrText(String raw) {
     }
   }
 
+  final headerDetected = detectEslipTableHeader(text);
+  if (!headerDetected) {
+    dedupedWarnings.insert(
+      0,
+      'Table header not detected — verify column alignment in the photo.',
+    );
+  }
+
+  final validatedRows = _buildValidatedRows(text, classes, dedupedWarnings);
+  final overallConfidence = _overallConfidence(validatedRows);
+
   return EslipParseOutcome(
     profile: _parseProfile(text),
     classes: classes,
-    warnings: dedupedWarnings,
+    warnings: _dedupeWarnings(dedupedWarnings),
+    validatedRows: validatedRows,
+    overallConfidencePercent: overallConfidence,
+    headerDetected: headerDetected,
   );
 }
 

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
-import 'home_shell.dart';
+import 'app_guide_screen.dart';
 
 /// First launch: campus-branded splash; [Enter APP] opens the main shell (Dashboard tab).
 class WelcomeScreen extends StatelessWidget {
@@ -13,7 +13,7 @@ class WelcomeScreen extends StatelessWidget {
 
   void _enterApp(BuildContext context) {
     Navigator.of(context).pushReplacement<void, void>(
-      MaterialPageRoute<void>(builder: (_) => const HomeShell()),
+      MaterialPageRoute<void>(builder: (_) => const AppGuideScreen()),
     );
   }
 

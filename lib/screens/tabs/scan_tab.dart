@@ -6,7 +6,10 @@ import 'package:lnu_app_class_locator/navigation/home_tabs.dart';
 import 'package:lnu_app_class_locator/services/eslip_ocr_service.dart';
 import 'package:lnu_app_class_locator/state/app_repository.dart';
 import 'package:lnu_app_class_locator/utils/eslip_ocr_parser.dart';
-import 'package:lnu_app_class_locator/widgets/schedule_class_card.dart';
+import 'package:lnu_app_class_locator/models/validated_eslip_row.dart';
+import 'package:lnu_app_class_locator/screens/eslip_printable_view.dart';
+import 'package:lnu_app_class_locator/screens/eslip_review_screen.dart';
+import 'package:lnu_app_class_locator/utils/debug_agent_log.dart';
 
 enum _ExtractorMenu { dashboard, schedule }
 
@@ -95,9 +98,90 @@ class _ScanTabState extends State<ScanTab> {
       final outcome = parseEslipOcrText(raw);
       if (!mounted) return;
 
-      await Future<void>.delayed(Duration.zero);
+      if (outcome.validatedRows.isEmpty && outcome.classes.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                raw.trim().length > 60
+                    ? 'Text was read but no class rows matched. Include the full enrolment table.'
+                    : 'No subjects found. Capture the full table in good lighting.',
+              ),
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+        return;
+      }
+
       if (!mounted) return;
-      await _showEslipImportSheet(repo, outcome, rawCharacterCount: raw.trim().length);
+      final result = await Navigator.of(context).push<Object?>(
+        MaterialPageRoute(
+          builder: (_) => EslipReviewScreen(outcome: outcome),
+        ),
+      );
+      // #region agent log
+      agentDebugLog(
+        location: 'scan_tab.dart:_scanEslip',
+        message: 'review_returned',
+        hypothesisId: 'H1',
+        data: {
+          'resultType': result?.runtimeType.toString() ?? 'null',
+          'mounted': mounted,
+        },
+      );
+      // #endregion
+      if (!mounted || result is! Map) return;
+      final imported = result['imported'] as int? ?? 0;
+      final profile = result['profile'] as EslipParsedProfile?;
+      List<ValidatedEslipRow>? rows;
+      final rowsRaw = result['rows'];
+      if (rowsRaw is List<ValidatedEslipRow>) {
+        rows = rowsRaw;
+      } else if (rowsRaw is List) {
+        rows = rowsRaw.whereType<ValidatedEslipRow>().toList();
+      }
+      // #region agent log
+      agentDebugLog(
+        location: 'scan_tab.dart:_scanEslip',
+        message: 'parsed_review_result',
+        hypothesisId: 'H1',
+        runId: 'post-fix',
+        data: {
+          'imported': imported,
+          'rowCount': rows?.length ?? 0,
+          'hasProfile': profile != null,
+        },
+      );
+      // #endregion
+      if (imported > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$imported classes saved')),
+        );
+        final printableRows = rows;
+        if (profile != null &&
+            printableRows != null &&
+            printableRows.isNotEmpty) {
+          final printableProfile = profile;
+          // #region agent log
+          agentDebugLog(
+            location: 'scan_tab.dart:_scanEslip',
+            message: 'push_printable_from_scan',
+            hypothesisId: 'H1',
+            data: {'rowCount': printableRows.length},
+          );
+          // #endregion
+          await Navigator.of(context).push<void>(
+            MaterialPageRoute(
+              builder: (_) => EslipPrintableView(
+                profile: printableProfile,
+                rows: printableRows,
+              ),
+            ),
+          );
+        }
+        widget.onOpenTab(HomeTabs.schedule);
+      }
     } catch (e) {
       if (mounted) {
         Navigator.of(context, rootNavigator: true).pop();
@@ -106,281 +190,6 @@ class _ScanTabState extends State<ScanTab> {
         );
       }
     }
-  }
-
-  Future<void> _showEslipImportSheet(
-    AppRepository repo,
-    EslipParseOutcome outcome, {
-    int rawCharacterCount = 0,
-  }) async {
-    final sel = List<bool>.filled(outcome.classes.length, true);
-    var replaceSchedule = true;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useRootNavigator: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final scheme = Theme.of(ctx).colorScheme;
-        return StatefulBuilder(
-          builder: (ctx, setSt) {
-            final selectedCount = sel.where((x) => x).length;
-            return DraggableScrollableSheet(
-              initialChildSize: 0.78,
-              minChildSize: 0.42,
-              maxChildSize: 0.94,
-              expand: false,
-              builder: (_, scroll) => ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-                child: Material(
-                  color: scheme.surface,
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 10),
-                      Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: scheme.outlineVariant,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(22, 18, 22, 8),
-                        child: Row(
-                          children: [
-                            Icon(Icons.auto_awesome, color: scheme.primary),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                'Schedule extractor',
-                                style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx),
-                              child: const Text('Close'),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (outcome.classes.length <= 1)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: scheme.tertiaryContainer.withValues(alpha: 0.55),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Text(
-                                outcome.classes.isEmpty
-                                    ? (rawCharacterCount > 60
-                                        ? 'Text was read but no class rows matched. Photograph the enrolment table flat, include all CODE/SUBJECT/SCHEDULE rows, then scan again.'
-                                        : 'No subjects found. Capture the full enrolment table (all rows) in good lighting, then scan again.')
-                                    : 'Only 1 subject detected. Include the whole class table in the photo (usually 10–12 rows), then scan again.',
-                                style: TextStyle(
-                                  color: scheme.onTertiaryContainer,
-                                  height: 1.35,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (outcome.warnings.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxHeight: 88),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: scheme.errorContainer.withValues(alpha: 0.65),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: SingleChildScrollView(
-                                padding: const EdgeInsets.all(12),
-                                child: Text(
-                                  outcome.warnings.length <= 3
-                                      ? outcome.warnings.join('\n')
-                                      : '${outcome.warnings.take(3).join('\n')}\n… and ${outcome.warnings.length - 3} more',
-                                  style: TextStyle(
-                                    color: scheme.onErrorContainer,
-                                    height: 1.35,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      SwitchListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-                        title: const Text('Replace current schedule'),
-                        subtitle: const Text('Clears saved classes first'),
-                        value: replaceSchedule,
-                        onChanged: (v) => setSt(() => replaceSchedule = v),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-                        child: Row(
-                          children: [
-                            Text(
-                              outcome.classes.length == 1
-                                  ? '1 class detected'
-                                  : '${outcome.classes.length} classes detected',
-                              style: Theme.of(ctx).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-                            ),
-                            const Spacer(),
-                            TextButton(
-                              onPressed: () => setSt(() {
-                                for (var i = 0; i < sel.length; i++) {
-                                  sel[i] = true;
-                                }
-                              }),
-                              child: const Text('Select all'),
-                            ),
-                            TextButton(
-                              onPressed: () => setSt(() {
-                                for (var i = 0; i < sel.length; i++) {
-                                  sel[i] = false;
-                                }
-                              }),
-                              child: const Text('Clear all'),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Expanded(
-                        child: outcome.classes.isEmpty
-                            ? Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(24),
-                                  child: Text(
-                                    'No classes detected — try a clearer, well-lit photo.',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(color: scheme.onSurfaceVariant, height: 1.4),
-                                  ),
-                                ),
-                              )
-                            : ListView.builder(
-                                controller: scroll,
-                                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                                itemCount: outcome.classes.length,
-                                itemBuilder: (_, i) {
-                                  final c = outcome.classes[i];
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 12),
-                                    child: _EslipClassPreviewCard(
-                                      item: c,
-                                      selected: sel[i],
-                                      onToggle: (checked) => setSt(() => sel[i] = checked),
-                                    ),
-                                  );
-                                },
-                              ),
-                      ),
-                      SafeArea(
-                        top: false,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                          child: FilledButton(
-                            onPressed: outcome.classes.isEmpty
-                                ? null
-                                : () async {
-                              final toImport = <EslipClassRow>[];
-                              for (var i = 0; i < outcome.classes.length; i++) {
-                                if (sel[i]) toImport.add(outcome.classes[i]);
-                              }
-                              if (toImport.isEmpty) {
-                                ScaffoldMessenger.of(ctx).showSnackBar(
-                                  const SnackBar(content: Text('Select at least one class to import.')),
-                                );
-                                return;
-                              }
-                              try {
-                                if (replaceSchedule) {
-                                  await repo.clearScheduleSlots();
-                                }
-                                final p = outcome.profile;
-                                if (p.studentId != null ||
-                                    p.fullName != null ||
-                                    p.college != null ||
-                                    p.course != null ||
-                                    p.section != null) {
-                                  await repo.saveProfile(
-                                    studentId: p.studentId,
-                                    fullName: p.fullName,
-                                    college: p.college,
-                                    course: p.course,
-                                    section: p.section,
-                                  );
-                                }
-                                final selected = toImport.length;
-                                final imported =
-                                    await repo.importEslipParsedClasses(toImport);
-                                if (ctx.mounted) Navigator.pop(ctx);
-                                if (mounted) {
-                                  final parts = <String>[];
-                                  if (replaceSchedule) {
-                                    parts.add('schedule replaced');
-                                  }
-                                  if (imported == selected) {
-                                    parts.add(
-                                      imported == 1
-                                          ? '1 class saved'
-                                          : '$imported classes saved',
-                                    );
-                                  } else {
-                                    parts.add('$imported of $selected classes saved');
-                                  }
-                                  if (imported < outcome.classes.length &&
-                                      selected == outcome.classes.length) {
-                                    parts.add('rescan if subjects are missing');
-                                  }
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(parts.join(' · ')),
-                                      duration: const Duration(seconds: 5),
-                                    ),
-                                  );
-                                  if (imported > 0) {
-                                    widget.onOpenTab(HomeTabs.schedule);
-                                  }
-                                }
-                              } on FormatException catch (e) {
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-                                }
-                              }
-                            },
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size.fromHeight(52),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            ),
-                            child: Text(
-                              selectedCount == outcome.classes.length
-                                  ? (selectedCount == 1
-                                      ? 'Import all 1 class'
-                                      : 'Import all $selectedCount classes')
-                                  : (selectedCount == 1
-                                      ? 'Add 1 class'
-                                      : 'Add $selectedCount classes'),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
   }
 
   @override
@@ -600,41 +409,6 @@ class _ScanTabState extends State<ScanTab> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _EslipClassPreviewCard extends StatelessWidget {
-  const _EslipClassPreviewCard({
-    required this.item,
-    required this.selected,
-    required this.onToggle,
-  });
-
-  final EslipClassRow item;
-  final bool selected;
-  final ValueChanged<bool> onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    return ScheduleClassCard.fromEslip(
-      item: item,
-      selected: selected,
-      onTap: () => onToggle(!selected),
-      margin: EdgeInsets.zero,
-      leading: Padding(
-        padding: const EdgeInsets.only(top: 2),
-        child: SizedBox(
-          width: 22,
-          height: 22,
-          child: Checkbox(
-            value: selected,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            visualDensity: VisualDensity.compact,
-            onChanged: (v) => onToggle(v ?? false),
-          ),
-        ),
       ),
     );
   }

@@ -1,16 +1,21 @@
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:uuid/uuid.dart';
 
 import '../data/app_database.dart';
 import '../data/day_codes.dart';
 import '../data/vacant_calc.dart';
 import '../models/models.dart';
 import '../models/parsed_schedule_display.dart';
+import '../models/schedule_item.dart';
+import '../models/student_profile.dart';
+import '../models/teacher.dart';
+import '../models/validated_eslip_row.dart';
 import '../utils/eslip_ocr_parser.dart';
 import '../utils/formatters.dart';
 import '../utils/schedule_day_filter.dart';
-import '../utils/schedule_field_parser.dart';
+import '../utils/schedule_field_parser.dart' show parseScheduleField;
 import '../utils/slot_display_mapper.dart';
 
 const _kOfflineEmail = 'offline@lnu.smartpath';
@@ -379,6 +384,264 @@ class AppRepository extends ChangeNotifier {
   }
 
   /// Imports multiple rows from e-slip OCR (each row may expand to several weekday slots).
+  static const _defaultStudentId = 'default';
+  final _uuid = const Uuid();
+
+  String _teacherIdFromName(String name) =>
+      name.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '_');
+
+  Future<Teacher?> getTeacherByName(String name) async {
+    final id = _teacherIdFromName(name);
+    final rows = await _requireDb.query('teachers', where: 'id = ?', whereArgs: [id]);
+    if (rows.isEmpty) return null;
+    return Teacher.fromRow(rows.first);
+  }
+
+  Future<Teacher> upsertTeacherFromInstructor(
+    String instructorName, {
+    String? subjectCode,
+  }) async {
+    final trimmed = instructorName.trim();
+    final id = _teacherIdFromName(trimmed);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final existing = await getTeacherByName(trimmed);
+    var subjects = existing?.subjectsTaught ?? <String>[];
+    if (subjectCode != null &&
+        subjectCode.isNotEmpty &&
+        !subjects.contains(subjectCode)) {
+      subjects = [...subjects, subjectCode];
+    }
+    final teacher = Teacher(
+      id: id,
+      name: trimmed,
+      position: existing?.position,
+      department: existing?.department,
+      college: existing?.college ?? _profileCache?.college,
+      email: existing?.email,
+      contactNumber: existing?.contactNumber,
+      profilePhotoPath: existing?.profilePhotoPath,
+      bio: existing?.bio,
+      yearsOfService: existing?.yearsOfService,
+      officeHours: existing?.officeHours,
+      officeRoom: existing?.officeRoom,
+      subjectsTaught: subjects,
+      socialLinks: existing?.socialLinks ?? {},
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    );
+    await _requireDb.insert(
+      'teachers',
+      teacher.toRow(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    notifyListeners();
+    return teacher;
+  }
+
+  Future<Teacher> updateTeacher(Teacher teacher) async {
+    final updated = teacher.copyWith(updatedAt: DateTime.now().millisecondsSinceEpoch);
+    await _requireDb.update(
+      'teachers',
+      updated.toRow(),
+      where: 'id = ?',
+      whereArgs: [teacher.id],
+    );
+    notifyListeners();
+    return updated;
+  }
+
+  Future<List<Teacher>> listTeachers() async {
+    final rows = await _requireDb.query('teachers', orderBy: 'name ASC');
+    return rows.map(Teacher.fromRow).toList();
+  }
+
+  Future<StudentProfile> getStudentProfile() async {
+    final rows = await _requireDb.query(
+      'students',
+      where: 'id = ?',
+      whereArgs: [_defaultStudentId],
+    );
+    if (rows.isEmpty) {
+      await _requireDb.insert('students', {'id': _defaultStudentId});
+      return const StudentProfile(id: _defaultStudentId);
+    }
+    return StudentProfile.fromRow(rows.first);
+  }
+
+  Future<StudentProfile> saveStudentProfile(StudentProfile profile) async {
+    await _requireDb.insert(
+      'students',
+      profile.toRow(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    notifyListeners();
+    return profile;
+  }
+
+  Future<StudentProfile> syncStudentFromEslip(EslipParsedProfile p) async {
+    final current = await getStudentProfile();
+    final merged = current.copyWith(
+      idNumber: p.studentId ?? current.idNumber,
+      name: p.fullName ?? current.name,
+      college: p.college ?? current.college,
+      course: p.course ?? current.course,
+      section: p.section ?? current.section,
+      year: p.year ?? current.year,
+      semester: p.semester ?? current.semester,
+      academicYear: p.academicYear ?? current.academicYear,
+      formNumber: p.formNumber ?? current.formNumber,
+    );
+    return saveStudentProfile(merged);
+  }
+
+  Future<List<ScheduleItem>> listScheduleItemsForSubject(String subjectId) async {
+    final rows = await _requireDb.query(
+      'schedule_items',
+      where: 'subject_id = ?',
+      whereArgs: [subjectId],
+      orderBy: 'due_date ASC, due_time ASC',
+    );
+    return rows.map(ScheduleItem.fromRow).toList();
+  }
+
+  Future<List<ScheduleItem>> listAllScheduleItems() async {
+    final rows = await _requireDb.query(
+      'schedule_items',
+      orderBy: 'due_date ASC, due_time ASC',
+    );
+    return rows.map(ScheduleItem.fromRow).toList();
+  }
+
+  Future<ScheduleItem> saveScheduleItem(ScheduleItem item) async {
+    await _requireDb.insert(
+      'schedule_items',
+      item.toRow(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    notifyListeners();
+    return item;
+  }
+
+  Future<void> deleteScheduleItem(String id) async {
+    await _requireDb.delete('schedule_items', where: 'id = ?', whereArgs: [id]);
+    notifyListeners();
+  }
+
+  ScheduleItem newScheduleItem({
+    required String subjectId,
+    required ScheduleItemType type,
+    required String title,
+  }) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return ScheduleItem(
+      id: _uuid.v4(),
+      subjectId: subjectId,
+      type: type,
+      title: title,
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
+
+  Future<int> importValidatedEslipRows(List<ValidatedEslipRow> rows) async {
+    var imported = 0;
+    for (final v in rows) {
+      final rebuilt = _rebuildClassRowFromValidated(v);
+      if (rebuilt == null) continue;
+      final p = rebuilt.parsed;
+      try {
+        await addScheduleClass(
+          enrollmentCode: rebuilt.enrollmentCode,
+          subjectName: p.subjectCode,
+          roomCode: p.roomCode,
+          dayPattern: p.dayToken,
+          startTimeRaw: p.startTimeRaw,
+          endTimeRaw: p.endTimeRaw,
+          instructorName: p.instructor.isNotEmpty ? p.instructor : null,
+          subjectTitle: p.subjectTitle.isNotEmpty ? p.subjectTitle : null,
+          section: v.section.isNotEmpty ? v.section : null,
+        );
+        imported++;
+      } on FormatException catch (e) {
+        debugPrint('Skipped ${p.subjectCode}: ${e.message}');
+      }
+    }
+    return imported;
+  }
+
+  EslipClassRow? _rebuildClassRowFromValidated(ValidatedEslipRow v) {
+    final field = v.scheduleRaw.isNotEmpty
+        ? parseScheduleField(v.scheduleRaw, log: false)
+        : null;
+    if (field == null && v.parsed == null) return null;
+
+    final f = field;
+    final p = v.parsed;
+    final parsed = ParsedScheduleDisplay(
+      startTime: f?.startTime ?? p!.startTime,
+      endTime: f?.endTime ?? p!.endTime,
+      subjectCode: v.subjectCode.isNotEmpty ? v.subjectCode : p!.subjectCode,
+      subjectTitle: v.description,
+      subjectName: formatCardSubject(
+        subjectCode: v.subjectCode,
+        subjectTitle: v.description,
+      ),
+      roomCode: f?.roomCode ?? p!.roomCode,
+      instructor: v.instructor,
+      dayPattern: f?.dayPattern ?? p!.dayPattern,
+      dayToken: f?.dayToken ?? p!.dayToken,
+      startTimeRaw: f?.startTimeRaw ?? p!.startTimeRaw,
+      endTimeRaw: f?.endTimeRaw ?? p!.endTimeRaw,
+    );
+
+    return EslipClassRow(
+      enrollmentCode: v.enrollmentCode,
+      parsed: parsed,
+    );
+  }
+
+  Future<int> confirmEslipImport({
+    required List<ValidatedEslipRow> rows,
+    required EslipParsedProfile profile,
+    bool replaceSchedule = true,
+  }) async {
+    if (replaceSchedule) await clearScheduleSlots();
+
+    await saveProfile(
+      studentId: profile.studentId,
+      fullName: profile.fullName,
+      college: profile.college,
+      course: profile.course,
+      section: profile.section,
+    );
+    await syncStudentFromEslip(profile);
+
+    final imported = await importValidatedEslipRows(rows);
+    for (final v in rows) {
+      final ins = v.instructor.trim();
+      if (ins.isNotEmpty) {
+        await upsertTeacherFromInstructor(ins, subjectCode: v.subjectCode);
+      }
+    }
+    return imported;
+  }
+
+  Future<Map<String, dynamic>> studentStats() async {
+    final slots = await _allSlots();
+    final classes = distinctClassBlocksFromSlots(slots);
+    var labCount = 0;
+    var totalUnits = 0;
+    for (final c in classes) {
+      if (c.subjectCode.toUpperCase().endsWith('L')) labCount++;
+      totalUnits += 2;
+    }
+    return {
+      'subjectCount': classes.length,
+      'labCount': labCount,
+      'totalUnits': totalUnits,
+    };
+  }
+
   Future<int> importEslipParsedClasses(List<EslipClassRow> rows) async {
     debugPrint('Total classes parsed: ${rows.length}');
     var blocks = 0;
