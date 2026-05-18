@@ -3,13 +3,12 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import 'package:lnu_app_class_locator/navigation/home_tabs.dart';
-import 'package:lnu_app_class_locator/screens/campus_buildings_screen.dart';
 import 'package:lnu_app_class_locator/services/eslip_ocr_service.dart';
 import 'package:lnu_app_class_locator/state/app_repository.dart';
 import 'package:lnu_app_class_locator/utils/eslip_ocr_parser.dart';
 import 'package:lnu_app_class_locator/widgets/schedule_class_card.dart';
 
-enum _ExtractorMenu { dashboard, schedule, buildings }
+enum _ExtractorMenu { dashboard, schedule }
 
 class ScanTab extends StatefulWidget {
   const ScanTab({super.key, required this.onOpenTab});
@@ -514,18 +513,11 @@ class _ScanTabState extends State<ScanTab> {
                             case _ExtractorMenu.schedule:
                               widget.onOpenTab(HomeTabs.schedule);
                               break;
-                            case _ExtractorMenu.buildings:
-                              Navigator.of(context).push<void>(
-                                MaterialPageRoute<void>(builder: (_) => const CampusBuildingsScreen()),
-                              );
-                              break;
                           }
                         },
                         itemBuilder: (ctx) => [
                           const PopupMenuItem(value: _ExtractorMenu.dashboard, child: Text('Dashboard')),
                           const PopupMenuItem(value: _ExtractorMenu.schedule, child: Text('Schedule')),
-                          const PopupMenuDivider(),
-                          const PopupMenuItem(value: _ExtractorMenu.buildings, child: Text('Campus buildings')),
                         ],
                       ),
                     ],
@@ -590,7 +582,7 @@ class _ScanTabState extends State<ScanTab> {
                             '• No internet required.\n'
                             '• Schedule stays in a local database.\n'
                             '• Day codes match your slip: MTh, TF, W, SS, MWF, etc.\n'
-                            '• Extractor hides the bottom bar — menu (top right): Dashboard, Schedule, Campus buildings.\n'
+                            '• Extractor hides the bottom bar — menu (top right): Dashboard, Schedule.\n'
                             '• Descriptions are capped per row so OCR noise from other columns is reduced.\n'
                             '• Tip: photograph the table flat, in good light.',
                             style: TextStyle(

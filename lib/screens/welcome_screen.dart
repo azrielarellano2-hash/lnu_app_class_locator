@@ -55,7 +55,7 @@ class WelcomeScreen extends StatelessWidget {
                       const _LnuLogoMark(),
                       const SizedBox(height: 28),
                       Text(
-                        'LNU SmartPath',
+                        'LNU E-SLIP MANAGER',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                               color: Colors.white,
@@ -71,16 +71,6 @@ class WelcomeScreen extends StatelessWidget {
                           color: Colors.white.withValues(alpha: 0.88),
                           fontSize: 15,
                           fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Class locator · schedule · rooms',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.72),
-                          fontSize: 13,
-                          height: 1.35,
                         ),
                       ),
                       const SizedBox(height: 44),
