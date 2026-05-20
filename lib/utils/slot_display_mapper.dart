@@ -1,15 +1,24 @@
+import '../data/day_codes.dart';
 import '../models/models.dart';
 import '../models/parsed_schedule_display.dart';
 import 'formatters.dart';
 
 /// Builds card-ready fields from a stored schedule slot.
-ParsedScheduleDisplay parsedScheduleFromSlot(ScheduleSlot slot) {
+ParsedScheduleDisplay parsedScheduleFromSlot(
+  ScheduleSlot slot, {
+  String? dayToken,
+}) {
   final code = slot.subjectName.trim();
   final title = slot.subjectTitle?.trim();
   final instructor = sanitizeInstructorForDisplay(slot.instructorName) ?? '';
 
-  final dayPattern = slot.dayPattern != null && slot.dayPattern!.isNotEmpty
-      ? formatReadableDayPattern(slot.dayPattern!)
+  final token = dayToken ??
+      canonicalizeEslipDayToken(slot.dayPattern ?? '') ??
+      dayTokenFromWeekdayIndices({slot.dayOfWeek}) ??
+      '';
+
+  final dayLabel = token.isNotEmpty
+      ? readableDayPattern(token)
       : formatReadableWeekday(slot.dayOfWeek);
 
   return ParsedScheduleDisplay(
@@ -23,8 +32,8 @@ ParsedScheduleDisplay parsedScheduleFromSlot(ScheduleSlot slot) {
     ),
     roomCode: slot.roomCode.trim(),
     instructor: instructor,
-    dayPattern: dayPattern,
-    dayToken: slot.dayPattern ?? '',
+    dayPattern: dayLabel,
+    dayToken: token,
     startTimeRaw: slot.startTime,
     endTimeRaw: slot.endTime,
   );

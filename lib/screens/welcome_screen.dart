@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../widgets/app_logo_mark.dart';
 import 'app_guide_screen.dart';
 
 /// First launch: campus-branded splash; [Enter APP] opens the main shell (Dashboard tab).
@@ -52,7 +53,11 @@ class WelcomeScreen extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const _LnuLogoMark(),
+                      const AppLogoMark(
+                        size: 152,
+                        showTagline: true,
+                        lightBackground: false,
+                      ),
                       const SizedBox(height: 28),
                       Text(
                         'LNU E-SLIP MANAGER',
@@ -102,65 +107,6 @@ class WelcomeScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-                ),
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 16,
-                child: Text(
-                  'Campus companion (offline-friendly)',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.45),
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Center mark — official art: add `assets/branding/lnu_logo.png`, list it under `flutter: assets:` in pubspec,
-/// then replace this widget body with [Image.asset] if you prefer the raster seal.
-class _LnuLogoMark extends StatelessWidget {
-  const _LnuLogoMark();
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.22),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
-          ),
-        ],
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.12), width: 2),
-      ),
-      child: const SizedBox(
-        width: 152,
-        height: 152,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.school_rounded, size: 56, color: AppColors.primary),
-              SizedBox(height: 4),
-              Text(
-                'LNU',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 22,
-                  letterSpacing: 2,
-                  color: AppColors.primary,
                 ),
               ),
             ],

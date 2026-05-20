@@ -20,7 +20,7 @@ class AppDatabase {
     final path = p.join(dir, 'lnu_smartpath.db');
     return openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE profile (
@@ -46,7 +46,9 @@ class AppDatabase {
             instructor_name TEXT,
             subject_title TEXT,
             section TEXT,
-            day_pattern TEXT
+            day_pattern TEXT,
+            units TEXT,
+            lab TEXT
           );
         ''');
 
@@ -97,6 +99,10 @@ class AppDatabase {
         }
         if (oldVersion < 7) {
           await _createExtendedTables(db);
+        }
+        if (oldVersion < 8) {
+          await db.execute('ALTER TABLE schedule_slots ADD COLUMN units TEXT');
+          await db.execute('ALTER TABLE schedule_slots ADD COLUMN lab TEXT');
         }
       },
     );

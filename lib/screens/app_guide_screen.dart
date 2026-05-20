@@ -32,16 +32,16 @@ class _AppGuideScreenState extends State<AppGuideScreen> {
       title: '1. Scan your e-slip',
       body:
           'Open the Extractor tab (bottom navigation). Tap Scan e-slip, '
-          'then choose Camera or Gallery. Photograph the full enrolment table '
-          'in good lighting, flat and in frame.',
+          'then Gallery or Camera. Under Camera, pick Document Camera "Manual" '
+          '(auto crop) or Normal Cam. Keep the full enrolment table in frame.',
     ),
     _GuidePage(
-      icon: Icons.fact_check_outlined,
-      title: '2. Review & confirm',
+      icon: Icons.verified_outlined,
+      title: '2. E-slip detection',
       body:
-          'Check each row’s confidence (green / yellow / red). Tap any field '
-          'to fix OCR mistakes, then tap Confirm & save schedule. '
-          'Nothing is saved until you confirm.',
+          'After scanning, the app checks that your image is an enrolment form. '
+          'If recognized, your schedule is imported automatically — no manual '
+          'field editing required.',
     ),
     _GuidePage(
       icon: Icons.calendar_month,

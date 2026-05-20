@@ -52,7 +52,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('E-slip preview'), findsOneWidget);
+    expect(find.text('Enrolment form preview'), findsOneWidget);
     expect(find.text('LEYTE NORMAL UNIVERSITY'), findsOneWidget);
     expect(find.text('IT-122'), findsWidgets);
   });

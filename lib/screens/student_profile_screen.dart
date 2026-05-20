@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../models/student_profile.dart';
 import '../state/app_repository.dart';
+import '../theme/app_theme.dart';
 import 'eslip_printable_view.dart';
 import 'schedule_items_screen.dart';
 
@@ -58,10 +59,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   }
 
   Future<void> _pickPhoto() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (picked == null || _profile == null) return;
-    final updated = _profile!.copyWith(profilePhotoPath: picked.path);
+    if (_profile == null) return;
     final repo = context.read<AppRepository>();
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (!mounted || picked == null) return;
+    final updated = _profile!.copyWith(profilePhotoPath: picked.path);
     await repo.saveStudentProfile(updated);
     if (mounted) await _load();
   }
@@ -96,7 +98,17 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Student profile')),
+      appBar: AppBar(
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: 'Back',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text('Student profile'),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [

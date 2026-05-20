@@ -14,7 +14,7 @@ double _rowClusterThreshold(List<_OcrLine> lines) {
   final heights = lines.map((l) => l.height).where((h) => h > 2).toList()..sort();
   if (heights.isEmpty) return 14;
   final median = heights[heights.length ~/ 2];
-  return (median * 0.55).clamp(10.0, 32.0);
+  return (median * 0.62).clamp(12.0, 36.0);
 }
 
 /// Groups ML Kit lines by vertical position so enrolment table rows stay intact.
@@ -35,7 +35,9 @@ String groupRecognizedTextIntoRows(RecognizedText recognized) {
   lines.sort((a, b) {
     final rowDelta = (a.top - b.top).abs();
     if (rowDelta > threshold) return a.top.compareTo(b.top);
-    return a.left.compareTo(b.left);
+    final leftDelta = (a.left - b.left).abs();
+    if (leftDelta > 80) return a.left.compareTo(b.left);
+    return a.top.compareTo(b.top);
   });
 
   final rows = <String>[];

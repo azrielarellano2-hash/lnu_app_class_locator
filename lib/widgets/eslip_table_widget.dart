@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../constants/app_assets.dart';
 import '../models/validated_eslip_row.dart';
-import '../utils/debug_agent_log.dart';
 import '../utils/eslip_ocr_parser.dart';
+import '../utils/eslip_printable_rows.dart';
 
-/// On-screen LNU e-slip table (no Flutter [Table] — reliable inside scroll views).
+/// On-screen layout matching the official LNU Enrolment and Assessment Form.
 class EslipTableWidget extends StatelessWidget {
   const EslipTableWidget({
     super.key,
@@ -15,76 +16,119 @@ class EslipTableWidget extends StatelessWidget {
   final EslipParsedProfile profile;
   final List<ValidatedEslipRow> rows;
 
-  static const _tableWidth = 720.0;
+  static const _tableWidth = 760.0;
 
   @override
   Widget build(BuildContext context) {
-    // #region agent log
-    agentDebugLog(
-      location: 'eslip_table_widget.dart:build',
-      message: 'table_build',
-      hypothesisId: 'H2',
-      runId: 'post-fix',
-      data: {'rowCount': rows.length},
+    final sorted = List<ValidatedEslipRow>.from(rows);
+    sortEslipRowsByCode(sorted);
+    final totals = eslipUnitTotals(sorted);
+    final border = Border.all(color: Colors.black87, width: 0.6);
+    const cellStyle = TextStyle(fontSize: 10, height: 1.2);
+    const headerStyle = TextStyle(
+      fontSize: 10,
+      fontWeight: FontWeight.w700,
+      height: 1.2,
     );
-    // #endregion
-
-    final scheme = Theme.of(context).colorScheme;
-    var totalUnits = 0;
-    var totalLab = 0;
-    for (final r in rows) {
-      totalUnits += int.tryParse(r.units) ?? 0;
-      totalLab += int.tryParse(r.lab) ?? 0;
-    }
-
-    final border = Border.all(color: scheme.outline.withValues(alpha: 0.45));
-    final headerBg = scheme.primaryContainer;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        _headerBlock(context),
-        const SizedBox(height: 16),
+        _headerBlock(),
+        const SizedBox(height: 10),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: SizedBox(
             width: _tableWidth,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+            child: Table(
+              border: TableBorder.all(color: Colors.black87, width: 0.6),
+              columnWidths: const {
+                0: FixedColumnWidth(44),
+                1: FixedColumnWidth(52),
+                2: FlexColumnWidth(2.6),
+                3: FixedColumnWidth(36),
+                4: FixedColumnWidth(32),
+                5: FlexColumnWidth(2.1),
+                6: FixedColumnWidth(44),
+                7: FlexColumnWidth(1.5),
+              },
+              defaultVerticalAlignment: TableCellVerticalAlignment.middle,
               children: [
-                _gridRow(
-                  _headers,
-                  background: headerBg,
-                  bold: true,
-                  border: border,
+                TableRow(
+                  children: _headers
+                      .map(
+                        (h) => _tableCell(
+                          h,
+                          style: headerStyle,
+                          center: true,
+                          border: border,
+                        ),
+                      )
+                      .toList(),
                 ),
-                ...rows.asMap().entries.map((e) {
-                  final r = e.value;
-                  return _gridRow(
-                    [
-                      r.enrollmentCode ?? '',
-                      r.subjectCode,
-                      r.description,
-                      r.units,
-                      r.lab,
-                      r.scheduleRaw,
-                      r.section,
-                      r.instructor,
+                ...sorted.map(
+                  (r) => TableRow(
+                    children: [
+                      _tableCell(r.enrollmentCode ?? '', center: true, border: border, style: cellStyle),
+                      _tableCell(r.subjectCode, center: true, border: border, style: cellStyle),
+                      _tableCell(r.description, border: border, style: cellStyle),
+                      _tableCell(r.units, center: true, border: border, style: cellStyle),
+                      _tableCell(eslipLabCell(r.lab), center: true, border: border, style: cellStyle),
+                      _tableCell(eslipScheduleCell(r), border: border, style: cellStyle),
+                      _tableCell(r.section, center: true, border: border, style: cellStyle),
+                      _tableCell(r.instructor, border: border, style: cellStyle),
                     ],
-                    background: e.key.isOdd
-                        ? scheme.surfaceContainerHighest.withValues(alpha: 0.35)
-                        : null,
-                    border: border,
-                  );
-                }),
-                _gridRow(
-                  ['Total Units: $totalUnits $totalLab', '', '', '', '', '', '', ''],
-                  bold: true,
-                  border: border,
+                  ),
+                ),
+                TableRow(
+                  children: [
+                    _tableCell('', border: border),
+                    _tableCell('', border: border),
+                    _tableCell(
+                      'Total Units:',
+                      border: border,
+                      style: headerStyle,
+                      alignRight: true,
+                    ),
+                    _tableCell(
+                      '${totals.$1}',
+                      center: true,
+                      border: border,
+                      style: headerStyle,
+                    ),
+                    _tableCell(
+                      totals.$2 > 0 ? '${totals.$2}' : '',
+                      center: true,
+                      border: border,
+                      style: headerStyle,
+                    ),
+                    _tableCell('', border: border),
+                    _tableCell('', border: border),
+                    _tableCell('', border: border),
+                  ],
                 ),
               ],
             ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'Assessment Details',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Tuition based on $totals lecture units · Laboratory and miscellaneous fees per university assessment.',
+          style: TextStyle(fontSize: 10, color: Colors.grey.shade800),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Note: This is a system generated report. Signature/Stamp is not required.',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey.shade800,
           ),
         ),
       ],
@@ -102,79 +146,132 @@ class EslipTableWidget extends StatelessWidget {
     'INSTRUCTOR',
   ];
 
-  static const _colFlex = [1, 1, 3, 1, 1, 2, 1, 2];
-
-  Widget _gridRow(
-    List<String> cells, {
-    Color? background,
-    bool bold = false,
+  Widget _tableCell(
+    String text, {
     required Border border,
+    TextStyle style = const TextStyle(fontSize: 10),
+    bool center = false,
+    bool alignRight = false,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: background,
-        border: border,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: List.generate(8, (i) {
-          final text = i < cells.length ? cells[i] : '';
-          return Expanded(
-            flex: _colFlex[i],
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-              child: Text(
-                text,
-                style: TextStyle(
-                  fontSize: 11,
-                  height: 1.25,
-                  fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
-                ),
-              ),
-            ),
-          );
-        }),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 6),
+      child: Text(
+        text,
+        style: style,
+        textAlign: alignRight
+            ? TextAlign.right
+            : center
+                ? TextAlign.center
+                : TextAlign.left,
       ),
     );
   }
 
-  Widget _headerBlock(BuildContext context) {
+  Widget _headerBlock() {
     final ay = profile.academicYear ?? '';
     final sem = profile.semester ?? 'First Semester';
+    final formNo = profile.formNumber?.trim() ?? '';
+    final date = profile.enrolmentDate?.trim().isNotEmpty == true
+        ? profile.enrolmentDate!
+        : '';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Expanded(
-              child: Text(
-                'LEYTE NORMAL UNIVERSITY',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+            ClipOval(
+              child: Image.asset(
+                kLnuSealAsset,
+                width: 56,
+                height: 56,
+                fit: BoxFit.cover,
               ),
             ),
-            Text(
-              '$sem ${ay.isNotEmpty ? ay : ''}'.trim(),
-              style: const TextStyle(fontWeight: FontWeight.w600),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Column(
+                children: [
+                  Text(
+                    'LEYTE NORMAL UNIVERSITY',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+                  ),
+                  Text(
+                    'Tacloban City, Leyte',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              width: 168,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '$sem ${ay.isNotEmpty ? ay : ''}'.trim(),
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11),
+                  ),
+                  Text(
+                    formNo.isNotEmpty
+                        ? 'Enrolment and Assessment Form No. $formNo'
+                        : 'Enrolment and Assessment Form',
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
-        const Row(
+        const Divider(height: 16, thickness: 1, color: Colors.black87),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(child: Text('Tacloban City, Leyte')),
-            Text('Enrolment and Assessment Form'),
+            Expanded(
+              child: Wrap(
+                spacing: 16,
+                runSpacing: 4,
+                children: [
+                  _info('ID No:', profile.studentId),
+                  _info('Name:', profile.fullName),
+                  _info('Year:', profile.year),
+                ],
+              ),
+            ),
+            if (date.isNotEmpty) Text('Date: $date', style: const TextStyle(fontSize: 11)),
           ],
         ),
-        if (profile.formNumber != null) Text('Form No. ${profile.formNumber}'),
-        const SizedBox(height: 8),
-        Text(
-          'ID No: ${profile.studentId ?? '—'}  '
-          'Name: ${profile.fullName ?? '—'}  '
-          'Year: ${profile.year ?? '—'}  '
-          'Date: ${profile.enrolmentDate ?? '—'}',
+        Wrap(
+          spacing: 16,
+          runSpacing: 4,
+          children: [
+            _info('College:', profile.college),
+            _info('Section:', profile.section),
+          ],
         ),
-        Text('College: ${profile.college ?? '—'}'),
-        Text('Course: ${profile.course ?? '—'}'),
+        _info('Course:', profile.course),
+        const Divider(height: 12, thickness: 0.5, color: Colors.black54),
       ],
+    );
+  }
+
+  Widget _info(String label, String? value) {
+    return RichText(
+      text: TextSpan(
+        style: const TextStyle(fontSize: 11, color: Colors.black87),
+        children: [
+          TextSpan(
+            text: label,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          TextSpan(text: ' ${value?.trim().isNotEmpty == true ? value : '—'}'),
+        ],
+      ),
     );
   }
 }

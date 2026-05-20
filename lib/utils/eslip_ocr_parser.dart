@@ -4,7 +4,11 @@ import '../data/day_codes.dart';
 import '../models/parsed_schedule_display.dart';
 import '../models/validated_eslip_row.dart';
 import 'formatters.dart';
+import 'lnu_slip_patterns.dart';
+import 'lnu_slip_preprocess.dart' show preprocessEslipOcrText;
 import 'schedule_field_parser.dart';
+
+export 'lnu_slip_preprocess.dart' show preprocessEslipOcrText;
 
 /// One fully parsed class row from e-slip OCR.
 class EslipClassRow {
@@ -61,91 +65,33 @@ class EslipParseOutcome {
   final bool headerDetected;
 }
 
-// --- LNU e-slip patterns ---
+// --- LNU e-slip patterns (see lnu_slip_patterns.dart) ---
 
-/// Lab suffix (IT-121L) must be captured before the shorter IT-121 match.
-final RegExp _subjectCode =
-    RegExp(r'[A-Z]{2,3}-\d{2,4}L|[A-Z]{2,3}-\d{2,4}(?![0-9A-Za-z])');
-
-final RegExp _scheduleTime = RegExp(
-  r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*-\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)',
-  caseSensitive: false,
-);
-
-final RegExp _roomCode = RegExp(
-  r'(COMLAB\d+[A-Z]?|TBA\d+[A-Z]?|CISCOLAB|CON\d+[A-Z]?)',
-  caseSensitive: false,
-);
+final RegExp _subjectCode = lnuSubjectCodePattern;
+final RegExp _scheduleTime = lnuScheduleTimePattern;
+final RegExp _roomCode = lnuRoomCodePattern;
+final RegExp _sectionCode = lnuSectionCodePattern;
+final RegExp _rowCode = lnuEnrollmentCodePattern;
 
 final RegExp _instructorPattern = RegExp(
   r'[A-Z]\.\s+(?:[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*)',
 );
 
-final RegExp _sectionCode = RegExp(r'\b[A-Z]{2}\d{2}\b');
+RegExpMatch? _bestSubjectBeforeTime(String beforeTime) {
+  final matches = _subjectCode.allMatches(beforeTime).toList();
+  if (matches.isEmpty) return null;
 
-final RegExp _rowCode = RegExp(r'\bA\s?\d{3,4}\b');
+  final filtered = matches.where((m) {
+    final g = m.group(0)!.trim();
+    if (looksLikeSectionCode(g)) return false;
+    if (lnuEnrollmentCodePattern.hasMatch(g) && g.length <= 5) return false;
+    return true;
+  }).toList();
 
-String preprocessEslipOcrText(String raw) {
-  var s = raw.replaceAll(RegExp(r'\r\n?'), '\n');
-  s = s.replaceAll(RegExp(r'[–—−]'), '-');
-  s = s.replaceAll(RegExp(r'\bp\.m\.', caseSensitive: false), 'pm');
-  s = s.replaceAll(RegExp(r'\ba\.m\.', caseSensitive: false), 'am');
-  s = s.replaceAllMapped(
-    RegExp(r'\bA\s+(\d{3,4})\b'),
-    (m) => 'A${m.group(1)}',
+  if (filtered.isEmpty) return null;
+  return filtered.reduce(
+    (a, b) => a.group(0)!.length >= b.group(0)!.length ? a : b,
   );
-  s = s.replaceAll(
-    RegExp(r'(\d)(am|pm)\b', caseSensitive: false),
-    r'$1 $2',
-  );
-  // Common ML Kit spacing / misreads on LNU slips.
-  s = s.replaceAll(RegExp(r'COM\s*LAB', caseSensitive: false), 'COMLAB');
-  s = s.replaceAll(RegExp(r'CISCO\s*LAB', caseSensitive: false), 'CISCOLAB');
-  s = s.replaceAllMapped(
-    RegExp(r'\bT\s*BA(\d)', caseSensitive: false),
-    (m) => 'TBA${m.group(1)}',
-  );
-  s = s.replaceAllMapped(
-    RegExp(r'\bCON\s*(\d)', caseSensitive: false),
-    (m) => 'CON${m.group(1)}',
-  );
-  s = s.replaceAll(RegExp(r'\bM\s+Th\b', caseSensitive: false), 'MTh');
-  s = s.replaceAll(RegExp(r'\bT\s+F\b', caseSensitive: false), 'TF');
-  s = s.replaceAllMapped(
-    RegExp(r'\bAl(\d{2})\b'),
-    (m) => 'AI${m.group(1)}',
-  );
-  // IT - 122L / IT- 121L → IT-122L (LNU subject prefixes only; skips AI31 section codes)
-  s = s.replaceAllMapped(
-    RegExp(r'\b([A-Z]{2,3})\s*-\s*(\d{2,4})(L)?\b'),
-    (m) {
-      final dept = m.group(1)!.toUpperCase();
-      // Skip section codes like AI31, not subject departments.
-      if (dept == 'AI' && (m.group(2)?.length ?? 0) <= 2) {
-        return m.group(0)!;
-      }
-      return '$dept-${m.group(2)}${m.group(3) ?? ''}';
-    },
-  );
-  // 9 - 10:30 am → 9-10:30 am
-  s = s.replaceAllMapped(
-    RegExp(r'(\d)\s+-\s+(\d)'),
-    (m) => '${m.group(1)}-${m.group(2)}',
-  );
-  s = s.replaceAllMapped(
-    RegExp(r'COMLAB\s*(\d)', caseSensitive: false),
-    (m) => 'COMLAB${m.group(1)}',
-  );
-  s = s.replaceAllMapped(
-    RegExp(r'(\d{1,2})\s*:\s*(\d{2})'),
-    (m) => '${m.group(1)}:${m.group(2)}',
-  );
-  s = s.replaceAll(RegExp(r'[ \t]+'), ' ');
-  s = s.replaceAllMapped(
-    RegExp(r'\b([A-Za-z]{2,3}-\d{2,4}L?)\b'),
-    (m) => m.group(1)!.toUpperCase(),
-  );
-  return s;
 }
 
 String _collapseRowText(String text) =>
@@ -154,7 +100,12 @@ String _collapseRowText(String text) =>
 ({int sh, int sm, int eh, int em, String startAp, String endAp})
     _scheduleBoundsFromMatch(RegExpMatch m) {
   final endAp = m.group(6)!.toLowerCase();
-  final startAp = m.group(3)?.toLowerCase() ?? endAp;
+  var startAp = m.group(3)?.toLowerCase() ?? '';
+  if (startAp.isEmpty) {
+    final sh = int.parse(m.group(1)!);
+    final eh = int.parse(m.group(4)!);
+    startAp = sh > eh ? 'am' : endAp;
+  }
   return (
     sh: int.parse(m.group(1)!),
     sm: int.tryParse(m.group(2) ?? '0') ?? 0,
@@ -173,52 +124,32 @@ String _toTimeLabel(int hour12, int minute, String ampm) {
   return '${h.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
 }
 
-const Map<String, String> _dayTokenAliases = {
-  'MT': 'MTh',
-  'MTH': 'MTh',
-  'TTH': 'TF',
-  'TUTH': 'TF',
-  'WED': 'W',
-};
-
 String? _extractDayToken(String afterTime, String roomMatchText) {
   final roomStart = afterTime.indexOf(roomMatchText);
   if (roomStart < 0) return null;
   var beforeRoom = afterTime.substring(0, roomStart).trim();
   beforeRoom = beforeRoom.replaceAll(RegExp(r'[.,;]+$'), '').trim();
-  if (beforeRoom.isEmpty) return null;
-
-  if (eslipDayMap.containsKey(beforeRoom)) return beforeRoom;
-  final joined = beforeRoom.replaceAll(RegExp(r'\s+'), '');
-  if (eslipDayMap.containsKey(joined)) return joined;
-  final alias = _dayTokenAliases[joined.toUpperCase()];
-  if (alias != null) return alias;
-
-  for (final key in const ['MTh', 'TF', 'SS', 'W']) {
-    if (beforeRoom == key || beforeRoom.endsWith(' $key')) return key;
-  }
-  for (final key in eslipDayMap.keys) {
-    if (joined == key || joined.endsWith(key)) return key;
-  }
-  return null;
+  return matchScheduleDayToken(beforeRoom);
 }
 
 RegExpMatch? _locateRoomAfterTime(String afterTime) {
-  final matches = _roomCode.allMatches(afterTime).toList();
-  if (matches.isEmpty) return null;
-  return matches.last;
+  return _roomCode.firstMatch(afterTime);
 }
 
-RegExpMatch? _bestSubjectBeforeTime(String beforeTime) {
-  final matches = _subjectCode.allMatches(beforeTime).toList();
-  if (matches.isEmpty) return null;
-  return matches.reduce(
-    (a, b) => a.group(0)!.length >= b.group(0)!.length ? a : b,
-  );
+/// Schedule time range whose trailing text has a day token and room.
+/// When OCR glues units to times (e.g. "3 9-10:30 am"), prefer the last valid match.
+RegExpMatch? _locateTimeInRow(String collapsed) {
+  RegExpMatch? best;
+  for (final m in _scheduleTime.allMatches(collapsed)) {
+    final after = collapsed.substring(m.end).trim();
+    final room = _locateRoomAfterTime(after);
+    if (room == null) continue;
+    final day = _extractDayToken(after, room.group(0)!);
+    if (day == null) continue;
+    best = m;
+  }
+  return best;
 }
-
-RegExpMatch? _locateTimeInRow(String collapsed) =>
-    _scheduleTime.firstMatch(collapsed);
 
 String _buildSubjectNameLine(String code, String? description) {
   return formatCardSubject(
@@ -238,8 +169,7 @@ String? _extractDescription(String afterCode, int timeStart, String subjectCode)
   chunk = stripScheduleNoiseFromText(chunk);
   if (chunk.isEmpty) return null;
   if (looksLikeRawOcrScheduleLine(chunk)) return null;
-  if (RegExp(r'\b(COMLAB|TBA|CISCOLAB|CON\d)', caseSensitive: false)
-      .hasMatch(chunk)) {
+  if (lnuRoomCodePattern.hasMatch(chunk)) {
     return null;
   }
   if (chunk.toUpperCase() == subjectCode.toUpperCase()) return null;
@@ -303,7 +233,7 @@ ParsedScheduleDisplay? _buildParsedDisplay({
 
   final startTime = formatHm(startTimeRaw);
   final endTime = formatHm(endTimeRaw);
-  final dayPattern = mapEslipDay(dayToken);
+  final dayPattern = readableDayPattern(dayToken);
   final title = stripScheduleNoiseFromText(description?.trim() ?? '');
 
   return ParsedScheduleDisplay(
@@ -326,6 +256,9 @@ EslipClassRow? _parseEslipRow(String line) {
   if (collapsed.length < 12) return null;
   if (!_hasCompleteSchedule(collapsed)) return null;
 
+  final enrollMatches = _rowCode.allMatches(collapsed).toList();
+  if (enrollMatches.length > 1) return null;
+
   final timeMatch = _locateTimeInRow(collapsed);
   if (timeMatch == null) return null;
 
@@ -333,7 +266,7 @@ EslipClassRow? _parseEslipRow(String line) {
   final codeMatch = _bestSubjectBeforeTime(beforeTime);
   if (codeMatch == null) return null;
 
-  final subjectCode = codeMatch.group(0)!;
+  final subjectCode = normalizeSubjectCodeToken(codeMatch.group(0)!);
   String? enrollmentCode;
   final enrollMatch = _rowCode.firstMatch(beforeTime);
   if (enrollMatch != null) {
@@ -421,9 +354,28 @@ List<String> _segmentsByEnrolmentLines(List<String> lines) {
   return segments;
 }
 
+bool _isSubjectMatchSubsumed(String collapsed, RegExpMatch match) {
+  final code = match.group(0)!;
+  if (code.length >= 8) return false;
+  final start = match.start;
+  if (start < 4) return false;
+  final prefix = collapsed.substring(0, start);
+  return RegExp(r'PROF\s+ED-\s*$', caseSensitive: false).hasMatch(prefix);
+}
+
+int _nextEnrollmentCodeStart(String collapsed, int afterIndex) {
+  for (final m in _rowCode.allMatches(collapsed)) {
+    if (m.start > afterIndex) return m.start;
+  }
+  return collapsed.length;
+}
+
 List<String> _segmentsBySubjectCode(String text) {
   final collapsed = _collapseRowText(text);
-  final matches = _subjectCode.allMatches(collapsed).toList();
+  final rawMatches = _subjectCode.allMatches(collapsed).toList();
+  final matches = rawMatches
+      .where((m) => !_isSubjectMatchSubsumed(collapsed, m))
+      .toList();
   if (matches.isEmpty) return [];
 
   final segments = <String>[];
@@ -438,8 +390,10 @@ List<String> _segmentsBySubjectCode(String text) {
       start = matches[i - 1].end;
     }
 
-    final end =
+    var end =
         i + 1 < matches.length ? matches[i + 1].start : collapsed.length;
+    final enrollEnd = _nextEnrollmentCodeStart(collapsed, start);
+    if (enrollEnd < end) end = enrollEnd;
     final segment = collapsed.substring(start, end).trim();
     if (segment.length >= 12) segments.add(segment);
   }
@@ -448,7 +402,52 @@ List<String> _segmentsBySubjectCode(String text) {
 
 String _rowKey(EslipClassRow r) {
   final p = r.parsed;
-  return '${p.subjectCode}|${p.startTimeRaw}|${p.endTimeRaw}|${p.roomCode}|${p.dayToken}';
+  final code = r.enrollmentCode?.replaceAll(RegExp(r'\s+'), '').toUpperCase() ?? '';
+  return '$code|${p.subjectCode}|${p.startTimeRaw}|${p.endTimeRaw}|${p.roomCode}|${p.dayToken}';
+}
+
+/// One enrolment row per CODE (A145, A146, …); prevents duplicate cards from multi-pass OCR.
+List<EslipClassRow> _dedupeByEnrollmentCode(Iterable<EslipClassRow> rows) {
+  final byCode = <String, EslipClassRow>{};
+  for (final row in rows) {
+    final code = row.enrollmentCode?.replaceAll(RegExp(r'\s+'), '').toUpperCase();
+    final key = (code != null && code.isNotEmpty) ? code : _rowKey(row);
+    final existing = byCode[key];
+    if (existing == null) {
+      byCode[key] = row;
+      continue;
+    }
+    if (existing.parsed.subjectCode != row.parsed.subjectCode) {
+      byCode[_rowKey(row)] = row;
+      continue;
+    }
+    if (_rowKey(existing) == _rowKey(row)) {
+      byCode[key] = _mergeRows(existing, row);
+      continue;
+    }
+    byCode[key] = _mergeRows(existing, row);
+  }
+
+  final byFingerprint = <String, EslipClassRow>{};
+  for (final row in byCode.values) {
+    final fp = _rowKey(row);
+    final existing = byFingerprint[fp];
+    byFingerprint[fp] =
+        existing == null ? row : _mergeRows(existing, row);
+  }
+
+  final list = byFingerprint.values.toList();
+  list.sort((a, b) {
+    final ac = a.enrollmentCode ?? '';
+    final bc = b.enrollmentCode ?? '';
+    return ac.compareTo(bc);
+  });
+  return list;
+}
+
+String _pickNonEmpty(String a, String b) {
+  if (a.trim().isNotEmpty) return a;
+  return b;
 }
 
 EslipClassRow _mergeRows(EslipClassRow a, EslipClassRow b) {
@@ -473,17 +472,17 @@ EslipClassRow _mergeRows(EslipClassRow a, EslipClassRow b) {
           : '';
 
   final merged = ParsedScheduleDisplay(
-    startTime: pa.startTime,
-    endTime: pa.endTime,
+    startTime: _pickNonEmpty(pa.startTime, pb.startTime),
+    endTime: _pickNonEmpty(pa.endTime, pb.endTime),
     subjectCode: pa.subjectCode,
     subjectTitle: title,
     subjectName: _buildSubjectNameLine(pa.subjectCode, title),
-    roomCode: pa.roomCode,
+    roomCode: _pickNonEmpty(pa.roomCode, pb.roomCode),
     instructor: ins,
-    dayPattern: pa.dayPattern,
-    dayToken: pa.dayToken,
-    startTimeRaw: pa.startTimeRaw,
-    endTimeRaw: pa.endTimeRaw,
+    dayPattern: _pickNonEmpty(pa.dayPattern, pb.dayPattern),
+    dayToken: _pickNonEmpty(pa.dayToken, pb.dayToken),
+    startTimeRaw: _pickNonEmpty(pa.startTimeRaw, pb.startTimeRaw),
+    endTimeRaw: _pickNonEmpty(pa.endTimeRaw, pb.endTimeRaw),
   );
 
   return EslipClassRow(
@@ -513,42 +512,78 @@ List<EslipClassRow> _parseScheduleRows(
 }) {
   final byKey = <String, EslipClassRow>{};
 
+  bool isSameClass(EslipClassRow a, EslipClassRow b) {
+    final pa = a.parsed;
+    final pb = b.parsed;
+    return pa.subjectCode == pb.subjectCode &&
+        pa.startTimeRaw == pb.startTimeRaw &&
+        pa.endTimeRaw == pb.endTimeRaw &&
+        pa.roomCode == pb.roomCode &&
+        pa.dayToken == pb.dayToken;
+  }
+
+  bool alreadyParsed(EslipClassRow row) {
+    final code = row.enrollmentCode?.replaceAll(RegExp(r'\s+'), '').toUpperCase();
+    if (code != null && code.isNotEmpty && byKey.containsKey(code)) {
+      return true;
+    }
+    for (final existing in byKey.values) {
+      if (isSameClass(existing, row)) return true;
+    }
+    return false;
+  }
+
   void absorb(EslipClassRow? row) {
-    if (row == null) return;
-    final key = _rowKey(row);
+    if (row == null || alreadyParsed(row)) return;
+    final code = row.enrollmentCode?.replaceAll(RegExp(r'\s+'), '').toUpperCase();
+    final key = (code != null && code.isNotEmpty) ? code : _rowKey(row);
     final existing = byKey[key];
     byKey[key] = existing == null ? row : _mergeRows(existing, row);
   }
+
+  void absorbSegment(String segment) => absorb(_parseEslipRow(segment));
 
   final lines = text.split('\n');
   final collapsed = _collapseRowText(text);
 
   final enrollLineSegments = _segmentsByEnrolmentLines(lines);
+  final enrollCodeSegments = _segmentsByEnrolmentCode(collapsed);
+  final hasEnrollmentRows = enrollLineSegments.isNotEmpty ||
+      enrollCodeSegments.isNotEmpty;
+  final hasStrongEnrollRows = enrollLineSegments.length >= 3 ||
+      enrollCodeSegments.length >= 3;
+
   if (kDebugMode) {
     debugPrint('Enrolment rows (multiline): ${enrollLineSegments.length}');
   }
+
   for (final segment in enrollLineSegments) {
-    absorb(_parseEslipRow(segment));
+    absorbSegment(segment);
   }
 
-  for (final segment in _segmentsByEnrolmentCode(collapsed)) {
-    absorb(_parseEslipRow(segment));
+  for (final segment in enrollCodeSegments) {
+    absorbSegment(segment);
   }
 
-  for (final segment in _splitRowSegments(collapsed)) {
-    absorb(_parseEslipRow(segment));
-  }
+  if (!hasStrongEnrollRows) {
+    for (final segment in _splitRowSegments(collapsed)) {
+      absorbSegment(segment);
+    }
 
-  for (final segment in _segmentsBySubjectCode(text)) {
-    if (!_hasCompleteSchedule(segment)) continue;
-    absorb(_parseEslipRow(segment));
-  }
+    if (!hasEnrollmentRows) {
+      for (final segment in _segmentsBySubjectCode(text)) {
+        if (!_hasCompleteSchedule(segment)) continue;
+        absorbSegment(segment);
+      }
+    }
 
-  for (var i = 0; i < lines.length; i++) {
-    if (!_subjectCode.hasMatch(lines[i])) continue;
-    final joined = _joinContinuationLines(lines, i);
-    if (!_hasCompleteSchedule(joined)) continue;
-    absorb(_parseEslipRow(joined));
+    for (var i = 0; i < lines.length; i++) {
+      if (!_subjectCode.hasMatch(lines[i])) continue;
+      final joined = _joinContinuationLines(lines, i);
+      if (!_hasCompleteSchedule(joined)) continue;
+      if (_rowCode.allMatches(joined).length > 1) continue;
+      absorbSegment(joined);
+    }
   }
 
   for (final segment in enrollLineSegments) {
@@ -568,7 +603,7 @@ List<EslipClassRow> _parseScheduleRows(
     }
   }
 
-  return byKey.values.toList();
+  return _dedupeByEnrollmentCode(byKey.values);
 }
 
 EslipParsedProfile _parseProfile(String text) {
@@ -643,6 +678,38 @@ final RegExp _headerRowPattern = RegExp(
 );
 
 bool detectEslipTableHeader(String text) => _headerRowPattern.hasMatch(text);
+
+/// Keywords and subject-code density for enrolment / assessment forms.
+bool isEslipDocument(String raw) {
+  final normalized = raw.toUpperCase().replaceAll(RegExp(r'\s+'), ' ');
+
+  const keywords = [
+    'ENROLMENT AND ASSESSMENT',
+    'ENROLLMENT AND ASSESSMENT',
+    'UNITS LAB',
+    'SCHEDULE AND ROOM',
+    'TOTAL UNITS',
+    'ASSESSMENT DETAILS',
+    'TUITION FEE',
+    'LEYTE NORMAL UNIVERSITY',
+    'CODE SUBJECT DESCRIPTION',
+  ];
+
+  var keywordHits = 0;
+  for (final k in keywords) {
+    if (normalized.contains(k)) keywordHits++;
+  }
+
+  if (detectEslipTableHeader(raw)) keywordHits += 2;
+
+  final subjectMatches = lnuSubjectCodePattern.allMatches(normalized).length;
+
+  final enrollCodes = _rowCode.allMatches(raw).length;
+
+  return keywordHits >= 2 ||
+      subjectMatches >= 3 ||
+      (enrollCodes >= 3 && subjectMatches >= 2);
+}
 
 ({String units, String lab}) _extractUnitsAndLab(
   String afterCode,
@@ -767,54 +834,26 @@ ValidatedEslipRow _validateParsedRow(String collapsed, EslipClassRow row) {
   );
 }
 
-ValidatedEslipRow _validateFailedSegment(String collapsed) {
-  final issues = <String>['Incomplete row — review all fields'];
-  var score = 0.25;
-  String subjectCode = '';
-  final codeMatch = _bestSubjectBeforeTime(collapsed);
-  if (codeMatch != null) {
-    subjectCode = codeMatch.group(0)!;
-    score += 0.15;
-  } else {
-    issues.add('Missing subject code');
-  }
+String? _segmentForClass(String text, EslipClassRow row) {
+  final collapsed = _collapseRowText(text);
+  final code = row.enrollmentCode?.replaceAll(RegExp(r'\s+'), '');
+  final segments = <String>{
+    ..._segmentsByEnrolmentLines(text.split('\n')),
+    ..._segmentsByEnrolmentCode(collapsed),
+    ..._splitRowSegments(collapsed),
+  }.where((s) => s.length >= 12);
 
-  final scheduleRaw = _buildScheduleRaw(collapsed);
-  ParsedScheduleDisplay? parsed;
-  if (scheduleRaw.isNotEmpty) {
-    final field = parseScheduleField(scheduleRaw, log: false);
-    if (field != null) {
-      parsed = ParsedScheduleDisplay(
-        startTime: field.startTime,
-        endTime: field.endTime,
-        subjectCode: subjectCode.isNotEmpty ? subjectCode : 'CLASS',
-        subjectTitle: '',
-        subjectName: subjectCode,
-        roomCode: field.roomCode,
-        instructor: _extractInstructor(collapsed) ?? '',
-        dayPattern: field.dayPattern,
-        dayToken: field.dayToken,
-        startTimeRaw: field.startTimeRaw,
-        endTimeRaw: field.endTimeRaw,
-      );
-      score += 0.25;
+  if (code != null && code.isNotEmpty) {
+    for (final s in segments) {
+      if (s.replaceAll(RegExp(r'\s+'), '').toUpperCase().contains(code.toUpperCase())) {
+        return s;
+      }
     }
   }
-
-  return ValidatedEslipRow(
-    enrollmentCode: _rowCode.firstMatch(collapsed)?.group(0)?.replaceAll(' ', ''),
-    subjectCode: subjectCode,
-    description: '',
-    units: '',
-    lab: '',
-    scheduleRaw: scheduleRaw,
-    section: _extractSectionFromRow(collapsed) ?? '',
-    instructor: _extractInstructor(collapsed) ?? '',
-    parsed: parsed,
-    confidence: _confidenceLevel(score),
-    confidenceScore: score.clamp(0.0, 1.0),
-    fieldIssues: issues,
-  );
+  for (final s in segments) {
+    if (s.contains(row.parsed.subjectCode)) return s;
+  }
+  return null;
 }
 
 List<ValidatedEslipRow> _buildValidatedRows(
@@ -822,42 +861,9 @@ List<ValidatedEslipRow> _buildValidatedRows(
   List<EslipClassRow> classes,
   List<String> warnings,
 ) {
-  final collapsed = _collapseRowText(text);
-  final segments = <String>{
-    ..._segmentsByEnrolmentLines(text.split('\n')),
-    ..._segmentsByEnrolmentCode(collapsed),
-    ..._splitRowSegments(collapsed),
-    ..._segmentsBySubjectCode(text),
-  }.where((s) => s.length >= 12).toList();
-
-  final validated = <ValidatedEslipRow>[];
-  final usedKeys = <String>{};
-
-  for (final row in classes) {
-    final key = _rowKey(row);
-    usedKeys.add(key);
-    String? segment;
-    for (final s in segments) {
-      if (s.contains(row.parsed.subjectCode)) {
-        segment = s;
-        break;
-      }
-    }
-    validated.add(_validateParsedRow(segment ?? '', row));
-  }
-
-  for (final seg in segments) {
-    final row = _parseEslipRow(seg);
-    if (row != null) continue;
-    if (!_subjectCode.hasMatch(seg)) continue;
-    final code = _bestSubjectBeforeTime(_collapseRowText(seg))?.group(0);
-    if (code == null) continue;
-    if (validated.any((v) => v.subjectCode == code)) continue;
-    validated.add(_validateFailedSegment(_collapseRowText(seg)));
-    warnings.add('Row $code flagged for manual review');
-  }
-
-  return validated;
+  return classes
+      .map((row) => _validateParsedRow(_segmentForClass(text, row) ?? '', row))
+      .toList();
 }
 
 double _overallConfidence(List<ValidatedEslipRow> rows) {

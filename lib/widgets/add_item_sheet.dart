@@ -194,7 +194,8 @@ class _AddItemSheetState extends State<AddItemSheet> {
               if (widget.type == ScheduleItemType.reminder) ...[
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: _repeat,
+                  key: ValueKey(_repeat),
+                  initialValue: _repeat,
                   decoration: const InputDecoration(labelText: 'Repeat'),
                   items: const [
                     DropdownMenuItem(value: 'none', child: Text('None')),
@@ -210,7 +211,8 @@ class _AddItemSheetState extends State<AddItemSheet> {
               ],
               if (widget.type == ScheduleItemType.activity) ...[
                 DropdownButtonFormField<ScheduleItemPriority>(
-                  value: _priority,
+                  key: ValueKey(_priority),
+                  initialValue: _priority,
                   decoration: const InputDecoration(labelText: 'Priority'),
                   items: ScheduleItemPriority.values
                       .map((p) => DropdownMenuItem(value: p, child: Text(p.name)))

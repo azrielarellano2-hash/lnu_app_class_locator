@@ -72,6 +72,8 @@ class ScheduleSlot {
     this.subjectTitle,
     this.instructorName,
     this.section,
+    this.units,
+    this.lab,
   });
 
   factory ScheduleSlot.fromJson(Map<String, dynamic> j) {
@@ -87,6 +89,8 @@ class ScheduleSlot {
       subjectTitle: j['subject_title'] as String?,
       instructorName: j['instructor_name'] as String?,
       section: j['section'] as String?,
+      units: j['units'] as String?,
+      lab: j['lab'] as String?,
     );
   }
 
@@ -103,6 +107,8 @@ class ScheduleSlot {
   final String? subjectTitle;
   final String? instructorName;
   final String? section;
+  final String? units;
+  final String? lab;
 }
 
 class WeeklyDay {

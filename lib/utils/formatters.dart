@@ -41,8 +41,12 @@ const _weekdayNames = [
   'Sunday',
 ];
 
-/// LNU e-slip day token → readable label (exact-key lookup only).
-String formatReadableDayPattern(String raw) => mapEslipDay(raw);
+/// LNU e-slip day token → readable label (strict MTh/TF/W/SS first).
+String formatReadableDayPattern(String raw) {
+  final canonical = canonicalizeEslipDayToken(raw);
+  if (canonical != null) return kEslipDayReadable[canonical]!;
+  return mapEslipDay(raw);
+}
 
 String formatReadableWeekday(int dayOfWeek) {
   if (dayOfWeek < 0 || dayOfWeek >= _weekdayNames.length) return '—';
@@ -130,7 +134,15 @@ String stripScheduleNoiseFromText(String raw) {
     ' ',
   ).trim();
   for (final day in eslipDayMap.keys) {
-    s = s.replaceAll(RegExp('\\b$day\\b'), ' ').trim();
+    if (day.length == 1) {
+      // Do not strip "W" from words like "Web".
+      s = s.replaceAll(
+        RegExp('(?<![A-Za-z])${RegExp.escape(day)}(?![a-z])'),
+        ' ',
+      ).trim();
+    } else {
+      s = s.replaceAll(RegExp('\\b${RegExp.escape(day)}\\b'), ' ').trim();
+    }
   }
   return s.replaceAll(RegExp(r'\s+'), ' ').trim();
 }
@@ -234,7 +246,8 @@ String formatEslipScheduleColumn({
     timePart = '$startTok $sap-$endTok $eap';
   }
 
-  return '$timePart $dayPattern $roomCode';
+  final token = canonicalizeEslipDayToken(dayPattern) ?? dayPattern.trim();
+  return '$timePart $token $roomCode';
 }
 
 String isoDate(DateTime d) =>

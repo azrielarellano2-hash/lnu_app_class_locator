@@ -1,19 +1,31 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lnu_app_class_locator/utils/eslip_ocr_parser.dart';
+import 'package:lnu_app_class_locator/utils/lnu_slip_patterns.dart';
 
 void main() {
+  test('preprocess no longer corrupts 8-10am times', () {
+    final pre = preprocessEslipOcrText('8-10am W CISCOLAB');
+    expect(pre, isNot(contains(r'$1')));
+    expect(pre, contains('8-10 am'));
+  });
+
   test('preprocess fixes enrolment codes for row splitting', () {
     final pre = preprocessEslipOcrText('A 145 IT-122 8-9 am MTh COMLAB2A');
     expect(pre, contains('A145'));
     expect(pre, isNot(contains(r'$1')));
   });
 
-  test('subject code regex matches lab codes', () {
-    final r = RegExp(
-      r'[A-Z]{2,3}-\d{2,4}L|[A-Z]{2,3}-\d{2,4}(?![0-9A-Za-z])',
-    );
-    expect(r.firstMatch('IT-122')?.group(0), 'IT-122');
-    expect(r.firstMatch('IT-121L')?.group(0), 'IT-121L');
+  test('preprocess does not split PM in PMF room codes', () {
+    final pre = preprocessEslipOcrText('9-10:30 am MTh PMF15A EE22');
+    expect(pre, contains('PMF15A'));
+    expect(pre, isNot(contains('PM F15A')));
+  });
+
+  test('subject code regex matches lab and education codes', () {
+    expect(lnuSubjectCodePattern.firstMatch('IT-122')?.group(0), 'IT-122');
+    expect(lnuSubjectCodePattern.firstMatch('IT-121L')?.group(0), 'IT-121L');
+    expect(lnuSubjectCodePattern.firstMatch('EDUC-118')?.group(0), 'EDUC-118');
+    expect(lnuSubjectCodePattern.firstMatch('PATHFIT-4')?.group(0), 'PATHFIT-4');
   });
 
   const userSampleRows = [
@@ -71,15 +83,36 @@ A149 IT-119 IT Elective IV - Web Systems and Technologies 2 1-3 pm W COMLAB6A AI
 A153 IT-125 Information Assurance and Security 2 5-7 pm W COMLAB3A AI31 D. Diaz
 ''';
 
-  test('parses full 12-row enrolment slip', () {
+  test('parses full 12-row enrolment slip without duplicate CODE rows', () {
     final o = parseEslipOcrText(fullSample);
     expect(o.profile.studentId, '2300289');
     expect(o.classes.length, 12);
+    final codes = o.classes.map((c) => c.enrollmentCode).toList();
+    expect(codes.toSet().length, codes.length);
     for (final row in o.classes) {
       expect(row.parsed.subjectName, isNotEmpty);
       expect(row.parsed.roomCode, isNotEmpty);
       expect(row.parsed.dayPattern, isNotEmpty);
     }
+    final wed = o.classes.where((c) => c.parsed.dayPattern == 'Wednesday');
+    expect(wed.length, 4);
+    final mth = o.classes.where(
+      (c) => c.parsed.dayPattern == 'Monday and Thursday',
+    );
+    expect(mth.length, 5);
+  });
+
+  test('keeps IT-121 and IT-121L as separate enrolment rows', () {
+    const sample = '''
+A146 IT-121L Information Management I 1 1 9-10:30 am MTh COMLAB4A AI31 D. Funcion
+A147 IT-121 Information Management I 2 8-10 am W CISCOLAB AI31 D. Funcion
+''';
+    final o = parseEslipOcrText(sample);
+    expect(o.classes.length, 2);
+    expect(
+      o.classes.map((c) => c.parsed.subjectCode).toSet(),
+      {'IT-121L', 'IT-121'},
+    );
   });
 
   test('merges description and schedule split across lines', () {
@@ -186,6 +219,30 @@ IT-119L IT Elective IV 1 1 1-2:30 pm TF COMLAB2A AI31 G. Ormeneta
     expect(row.parsed.roomCode, 'COMLAB2A');
     expect(row.parsed.dayPattern, 'Monday and Thursday');
     expect(row.parsed.instructor, 'M. Gotardo');
+  });
+
+  test('preprocess separates compact meridiem from day', () {
+    expect(preprocessEslipOcrText('8-10am W CISCOLAB'), contains('8-10 am'));
+    expect(preprocessEslipOcrText('8-10amW CISCOLAB'), contains('8-10 am W'));
+  });
+
+  test('parses Wednesday when meridiem is glued to W', () {
+    const glued =
+        'A147 IT-121 Information Management I 2 8-10am W CISCOLAB AI31 D. Funcion';
+    final outcome = parseEslipOcrText(glued);
+    expect(outcome.classes, hasLength(1));
+    final p = outcome.classes.single.parsed;
+    expect(p.dayToken, 'W');
+    expect(p.dayPattern, 'Wednesday');
+    expect(p.roomCode, 'CISCOLAB');
+  });
+
+  test('parses Wednesday from Wed alias and keeps Web in titles', () {
+    const line =
+        'A149 IT-119 IT Elective IV - Web Systems and Technologies 2 1-3 pm Wed COMLAB6A AI31 G. Ormeneta';
+    final p = parseEslipOcrText(line).classes.single.parsed;
+    expect(p.dayPattern, 'Wednesday');
+    expect(p.subjectTitle, contains('Web'));
   });
 
   test('parses split meridiem and compact evening times', () {

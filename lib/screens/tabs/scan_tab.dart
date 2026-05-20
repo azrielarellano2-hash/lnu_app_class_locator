@@ -1,17 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import 'package:lnu_app_class_locator/navigation/home_tabs.dart';
+import 'package:lnu_app_class_locator/services/eslip_image_capture_service.dart';
 import 'package:lnu_app_class_locator/services/eslip_ocr_service.dart';
 import 'package:lnu_app_class_locator/state/app_repository.dart';
-import 'package:lnu_app_class_locator/utils/eslip_ocr_parser.dart';
-import 'package:lnu_app_class_locator/models/validated_eslip_row.dart';
-import 'package:lnu_app_class_locator/screens/eslip_printable_view.dart';
-import 'package:lnu_app_class_locator/screens/eslip_review_screen.dart';
-import 'package:lnu_app_class_locator/utils/debug_agent_log.dart';
-
-enum _ExtractorMenu { dashboard, schedule }
+import 'package:lnu_app_class_locator/screens/eslip_detection_screen.dart';
+import 'package:lnu_app_class_locator/widgets/student_green_header.dart';
 
 class ScanTab extends StatefulWidget {
   const ScanTab({super.key, required this.onOpenTab});
@@ -23,11 +18,12 @@ class ScanTab extends StatefulWidget {
   State<ScanTab> createState() => _ScanTabState();
 }
 
+enum _EslipCaptureChoice { gallery, camera }
+
+enum _CameraCaptureChoice { documentCameraManual, normalCam }
+
 class _ScanTabState extends State<ScanTab> {
-  static const _deepForest = Color(0xFF06180E);
-  static const _leafMid = Color(0xFF1B5E20);
-  static const _leafBright = Color(0xFF43A047);
-  static const _mist = Color(0xFFE8F5E9);
+  final _capture = const EslipImageCaptureService();
 
   Future<void> _scanEslip(AppRepository repo) async {
     if (!EslipOcrService.isSupported) {
@@ -38,16 +34,36 @@ class _ScanTabState extends State<ScanTab> {
       return;
     }
 
-    final source = await showModalBottomSheet<ImageSource>(
+    final choice = await showModalBottomSheet<_EslipCaptureChoice>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (ctx) => _ImageSourceSheet(theme: Theme.of(ctx)),
     );
-    if (source == null || !mounted) return;
+    if (choice == null || !mounted) return;
 
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: source, imageQuality: 88);
-    if (picked == null || !mounted) return;
+    final String? imagePath;
+    switch (choice) {
+      case _EslipCaptureChoice.gallery:
+        imagePath = await _capture.pickFromGallery();
+      case _EslipCaptureChoice.camera:
+        final cameraChoice = await showModalBottomSheet<_CameraCaptureChoice>(
+          context: context,
+          backgroundColor: Colors.transparent,
+          builder: (ctx) => _CameraChoiceSheet(
+            theme: Theme.of(ctx),
+            documentCameraAvailable:
+                EslipImageCaptureService.documentScannerSupported,
+          ),
+        );
+        if (cameraChoice == null || !mounted) return;
+        imagePath = switch (cameraChoice) {
+          _CameraCaptureChoice.documentCameraManual =>
+            await _capture.captureWithDocumentCameraManual(),
+          _CameraCaptureChoice.normalCam =>
+            await _capture.captureWithNormalCamera(),
+        };
+    }
+    if (imagePath == null || !mounted) return;
 
     showDialog<void>(
       context: context,
@@ -77,7 +93,7 @@ class _ScanTabState extends State<ScanTab> {
     );
 
     try {
-      final raw = await EslipOcrService().recognizeFromFilePath(picked.path);
+      final raw = await EslipOcrService().recognizeFromFilePath(imagePath);
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
 
@@ -95,91 +111,18 @@ class _ScanTabState extends State<ScanTab> {
         return;
       }
 
-      final outcome = parseEslipOcrText(raw);
-      if (!mounted) return;
-
-      if (outcome.validatedRows.isEmpty && outcome.classes.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                raw.trim().length > 60
-                    ? 'Text was read but no class rows matched. Include the full enrolment table.'
-                    : 'No subjects found. Capture the full table in good lighting.',
-              ),
-              duration: const Duration(seconds: 5),
-            ),
-          );
-        }
-        return;
-      }
-
       if (!mounted) return;
       final result = await Navigator.of(context).push<Object?>(
         MaterialPageRoute(
-          builder: (_) => EslipReviewScreen(outcome: outcome),
+          builder: (_) => EslipDetectionScreen(ocrRaw: raw),
         ),
       );
-      // #region agent log
-      agentDebugLog(
-        location: 'scan_tab.dart:_scanEslip',
-        message: 'review_returned',
-        hypothesisId: 'H1',
-        data: {
-          'resultType': result?.runtimeType.toString() ?? 'null',
-          'mounted': mounted,
-        },
-      );
-      // #endregion
       if (!mounted || result is! Map) return;
       final imported = result['imported'] as int? ?? 0;
-      final profile = result['profile'] as EslipParsedProfile?;
-      List<ValidatedEslipRow>? rows;
-      final rowsRaw = result['rows'];
-      if (rowsRaw is List<ValidatedEslipRow>) {
-        rows = rowsRaw;
-      } else if (rowsRaw is List) {
-        rows = rowsRaw.whereType<ValidatedEslipRow>().toList();
-      }
-      // #region agent log
-      agentDebugLog(
-        location: 'scan_tab.dart:_scanEslip',
-        message: 'parsed_review_result',
-        hypothesisId: 'H1',
-        runId: 'post-fix',
-        data: {
-          'imported': imported,
-          'rowCount': rows?.length ?? 0,
-          'hasProfile': profile != null,
-        },
-      );
-      // #endregion
       if (imported > 0) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$imported classes saved')),
+          SnackBar(content: Text('$imported classes saved to your schedule')),
         );
-        final printableRows = rows;
-        if (profile != null &&
-            printableRows != null &&
-            printableRows.isNotEmpty) {
-          final printableProfile = profile;
-          // #region agent log
-          agentDebugLog(
-            location: 'scan_tab.dart:_scanEslip',
-            message: 'push_printable_from_scan',
-            hypothesisId: 'H1',
-            data: {'rowCount': printableRows.length},
-          );
-          // #endregion
-          await Navigator.of(context).push<void>(
-            MaterialPageRoute(
-              builder: (_) => EslipPrintableView(
-                profile: printableProfile,
-                rows: printableRows,
-              ),
-            ),
-          );
-        }
         widget.onOpenTab(HomeTabs.schedule);
       }
     } catch (e) {
@@ -198,140 +141,24 @@ class _ScanTabState extends State<ScanTab> {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      body: Stack(
+      backgroundColor: const Color(0xFFF5F7F5),
+      body: Column(
         children: [
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  _deepForest,
-                  _leafMid,
-                  _leafBright,
-                ],
-                stops: [0.0, 0.45, 1.0],
-              ),
-            ),
-            child: SizedBox.expand(),
-          ),
-          Positioned(
-            top: -60,
-            right: -40,
-            child: IgnorePointer(
-              child: Container(
-                width: 220,
-                height: 220,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.07),
-                ),
-              ),
+          StudentGreenHeader(
+            title: 'Extractor',
+            subtitle: 'Scan your LNU enrolment form — schedule imports automatically',
+            leading: const Icon(
+              Icons.document_scanner_outlined,
+              color: Colors.white,
+              size: 28,
             ),
           ),
-          Positioned(
-            bottom: 120,
-            left: -30,
-            child: IgnorePointer(
-              child: Container(
-                width: 160,
-                height: 160,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _mist.withValues(alpha: 0.06),
-                ),
-              ),
-            ),
-          ),
-          SafeArea(
+          Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(22, 12, 22, 28),
+              padding: const EdgeInsets.fromLTRB(22, 20, 22, 28),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.14),
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                                  ),
-                                  child: const Icon(Icons.document_scanner_outlined, color: Colors.white, size: 22),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    'LNU SmartPath',
-                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: 0.2,
-                                        ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 28),
-                            Text(
-                              'Schedule extractor',
-                              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: -0.5,
-                                  ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'LNU enrolment form — SUBJECT, DESCRIPTION, SCHEDULE, INSTRUCTOR',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.88),
-                                fontSize: 13,
-                                height: 1.35,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      PopupMenuButton<_ExtractorMenu>(
-                        tooltip: 'Menu',
-                        icon: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.14),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
-                          ),
-                          child: const Icon(Icons.menu_rounded, color: Colors.white, size: 22),
-                        ),
-                        offset: const Offset(0, 48),
-                        color: Theme.of(context).colorScheme.surface,
-                        onSelected: (action) {
-                          switch (action) {
-                            case _ExtractorMenu.dashboard:
-                              widget.onOpenTab(HomeTabs.dashboard);
-                              break;
-                            case _ExtractorMenu.schedule:
-                              widget.onOpenTab(HomeTabs.schedule);
-                              break;
-                          }
-                        },
-                        itemBuilder: (ctx) => [
-                          const PopupMenuItem(value: _ExtractorMenu.dashboard, child: Text('Dashboard')),
-                          const PopupMenuItem(value: _ExtractorMenu.schedule, child: Text('Schedule')),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 26),
                   DecoratedBox(
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.95),
@@ -364,9 +191,9 @@ class _ScanTabState extends State<ScanTab> {
                   const SizedBox(height: 18),
                   DecoratedBox(
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.12),
+                      color: const Color(0xFFE8F5E9),
                       borderRadius: BorderRadius.circular(22),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                      border: Border.all(color: scheme.primary.withValues(alpha: 0.2)),
                     ),
                     child: Padding(
                       padding: const EdgeInsets.all(18),
@@ -375,12 +202,12 @@ class _ScanTabState extends State<ScanTab> {
                         children: [
                           Row(
                             children: [
-                              Icon(Icons.info_outline_rounded, color: Colors.white.withValues(alpha: 0.95), size: 20),
+                              Icon(Icons.info_outline_rounded, color: scheme.primary, size: 20),
                               const SizedBox(width: 8),
                               Text(
-                                'Offline mode',
+                                'How it works',
                                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                      color: Colors.white,
+                                      color: scheme.primary,
                                       fontWeight: FontWeight.w700,
                                     ),
                               ),
@@ -388,14 +215,14 @@ class _ScanTabState extends State<ScanTab> {
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            '• No internet required.\n'
-                            '• Schedule stays in a local database.\n'
-                            '• Day codes match your slip: MTh, TF, W, SS, MWF, etc.\n'
-                            '• Extractor hides the bottom bar — menu (top right): Dashboard, Schedule.\n'
-                            '• Descriptions are capped per row so OCR noise from other columns is reduced.\n'
-                            '• Tip: photograph the table flat, in good light.',
+                            '• We verify your image is an enrolment / assessment form.\n'
+                            '• Your schedule is extracted automatically — no manual row editing.\n'
+                            '• MTh, TF, and W day codes are preserved (Wednesday included).\n'
+                            '• Lecture and lab rows stay separate (e.g. IT-121 vs IT-121L).\n'
+                            '• Camera: Document Camera "Manual" (crop) or Normal Cam.\n'
+                            '• Tip: photograph the full table flat, in good light.',
                             style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.9),
+                              color: Colors.grey.shade800,
                               height: 1.45,
                               fontSize: 13.5,
                             ),
@@ -422,6 +249,92 @@ class _ImageSourceSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = theme.colorScheme;
+    return _CaptureBottomSheet(
+      scheme: scheme,
+      title: 'Scan e-slip',
+      children: [
+        ListTile(
+          leading: CircleAvatar(
+            backgroundColor: scheme.primaryContainer,
+            child: Icon(Icons.photo_library_outlined, color: scheme.onPrimaryContainer),
+          ),
+          title: const Text('Gallery'),
+          subtitle: const Text('Existing photo of your e-slip'),
+          onTap: () => Navigator.pop(context, _EslipCaptureChoice.gallery),
+        ),
+        ListTile(
+          leading: CircleAvatar(
+            backgroundColor: scheme.secondaryContainer,
+            child: Icon(Icons.photo_camera_outlined, color: scheme.onSecondaryContainer),
+          ),
+          title: const Text('Camera'),
+          subtitle: const Text('Document Camera "Manual" or Normal Cam'),
+          onTap: () => Navigator.pop(context, _EslipCaptureChoice.camera),
+        ),
+      ],
+    );
+  }
+}
+
+class _CameraChoiceSheet extends StatelessWidget {
+  const _CameraChoiceSheet({
+    required this.theme,
+    required this.documentCameraAvailable,
+  });
+
+  final ThemeData theme;
+  final bool documentCameraAvailable;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = theme.colorScheme;
+    return _CaptureBottomSheet(
+      scheme: scheme,
+      title: 'Camera',
+      children: [
+        ListTile(
+          leading: CircleAvatar(
+            backgroundColor: scheme.tertiaryContainer,
+            child: Icon(Icons.document_scanner_outlined, color: scheme.onTertiaryContainer),
+          ),
+          title: const Text('Document Camera "Manual"'),
+          subtitle: Text(
+            documentCameraAvailable
+                ? 'Detect edges, adjust corners, then crop'
+                : 'Not available on this device',
+          ),
+          enabled: documentCameraAvailable,
+          onTap: documentCameraAvailable
+              ? () => Navigator.pop(context, _CameraCaptureChoice.documentCameraManual)
+              : null,
+        ),
+        ListTile(
+          leading: CircleAvatar(
+            backgroundColor: scheme.secondaryContainer,
+            child: Icon(Icons.photo_camera_outlined, color: scheme.onSecondaryContainer),
+          ),
+          title: const Text('Normal Cam'),
+          subtitle: const Text('Standard camera — no auto crop'),
+          onTap: () => Navigator.pop(context, _CameraCaptureChoice.normalCam),
+        ),
+      ],
+    );
+  }
+}
+
+class _CaptureBottomSheet extends StatelessWidget {
+  const _CaptureBottomSheet({
+    required this.scheme,
+    required this.title,
+    required this.children,
+  });
+
+  final ColorScheme scheme;
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(12),
       child: ClipRRect(
@@ -441,24 +354,19 @@ class _ImageSourceSheet extends StatelessWidget {
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: scheme.primaryContainer,
-                    child: Icon(Icons.photo_library_outlined, color: scheme.onPrimaryContainer),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
                   ),
-                  title: const Text('Gallery'),
-                  subtitle: const Text('Existing photo of your e-slip'),
-                  onTap: () => Navigator.pop(context, ImageSource.gallery),
                 ),
-                ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: scheme.secondaryContainer,
-                    child: Icon(Icons.photo_camera_outlined, color: scheme.onSecondaryContainer),
-                  ),
-                  title: const Text('Camera'),
-                  subtitle: const Text('Capture the form now'),
-                  onTap: () => Navigator.pop(context, ImageSource.camera),
-                ),
+                ...children,
                 const SizedBox(height: 8),
               ],
             ),

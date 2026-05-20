@@ -7,8 +7,8 @@ import '../../models/models.dart';
 import '../../navigation/home_tabs.dart';
 import '../../state/app_repository.dart';
 import '../../widgets/schedule_class_card.dart';
-import '../../screens/student_profile_screen.dart';
 import '../../widgets/schedule_detail_sheet.dart';
+import '../../widgets/student_green_header.dart';
 
 class DashboardTab extends StatefulWidget {
   const DashboardTab({super.key, required this.onOpenTab});
@@ -32,9 +32,9 @@ class _DashboardTabState extends State<DashboardTab> {
     final parts = raw.split(',');
     if (parts.length >= 2) {
       final right = parts.last.trim();
-      if (right.isNotEmpty) return right.split(RegExp(r'\s+')).first;
+      if (right.isNotEmpty) return right.split(RegExp(r'\s+')).first.toUpperCase();
     }
-    return raw.split(RegExp(r'\s+')).first;
+    return raw.split(RegExp(r'\s+')).first.toUpperCase();
   }
 
   String _greetingWord() {
@@ -51,9 +51,7 @@ class _DashboardTabState extends State<DashboardTab> {
   }
 
   Future<void> _load(AppRepository repo, {bool showLoader = true}) async {
-    if (showLoader) {
-      setState(() => _loading = true);
-    }
+    if (showLoader) setState(() => _loading = true);
     try {
       final summary = await repo.dashboardSummary();
       final today = await repo.scheduleToday();
@@ -65,16 +63,6 @@ class _DashboardTabState extends State<DashboardTab> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
-  }
-
-  void _onRepoChanged() {
-    final r = _repo;
-    if (r == null || !mounted) return;
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 100), () {
-      if (!mounted || _repo == null) return;
-      _load(_repo!, showLoader: _summary == null);
-    });
   }
 
   Future<void> _confirmReset(AppRepository repo) async {
@@ -101,6 +89,16 @@ class _DashboardTabState extends State<DashboardTab> {
     widget.onOpenTab(HomeTabs.scan);
   }
 
+  void _onRepoChanged() {
+    final r = _repo;
+    if (r == null || !mounted) return;
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 100), () {
+      if (!mounted || _repo == null) return;
+      _load(_repo!, showLoader: _summary == null);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -124,205 +122,190 @@ class _DashboardTabState extends State<DashboardTab> {
   Widget build(BuildContext context) {
     final repo = context.watch<AppRepository>();
     final user = repo.profile;
+    final summary = _summary;
 
     return Scaffold(
-      body: RefreshIndicator(
-        onRefresh: () => _load(repo, showLoader: true),
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverToBoxAdapter(
-              child: Container(
-                width: double.infinity,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF0D2818), Color(0xFF1B5E20), Color(0xFF2E7D32)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+      backgroundColor: const Color(0xFFF5F7F5),
+      body: Column(
+        children: [
+          StudentGreenHeader(
+            title: 'Class schedule',
+            leading: const Icon(Icons.school_outlined, color: Colors.white, size: 28),
+            bottom: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _greetingLine(user),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w800,
+                    height: 1.15,
+                    letterSpacing: -0.3,
                   ),
                 ),
-                padding: EdgeInsets.fromLTRB(
-                  20,
-                  MediaQuery.paddingOf(context).top + 16,
-                  20,
-                  24,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.school_rounded, color: Colors.white, size: 26),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Class schedule',
-                            style: TextStyle(color: Colors.white.withValues(alpha: 0.88)),
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'Student profile',
-                          onPressed: () => Navigator.of(context).push<void>(
-                            MaterialPageRoute(
-                              builder: (_) => const StudentProfileScreen(),
-                            ),
-                          ),
-                          icon: const Icon(Icons.person_outline, color: Colors.white),
-                        ),
-                      ],
+                if (summary != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    summary.greetingDateLocal,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.88),
+                      fontSize: 14,
                     ),
-                    const SizedBox(height: 16),
-                    Text(
-                      _greetingLine(user),
-                      style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w600),
+                  ),
+                ],
+                if (_loading && summary == null)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 20),
+                    child: Center(
+                      child: SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
-                    if (_summary != null)
-                      Text(
-                        _summary!.greetingDateLocal,
-                        style: TextStyle(color: Colors.white.withValues(alpha: 0.9)),
-                      ),
-                    const SizedBox(height: 16),
-                    if (_loading && _summary == null)
-                      const Center(child: CircularProgressIndicator(color: Colors.white))
-                    else if (_summary != null)
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _StatCard(
-                              label: 'Subjects',
-                              value: '${_summary!.subjectCount}',
-                              onTap: () => widget.onOpenTab(HomeTabs.schedule),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _StatCard(
-                              label: 'Free today',
-                              value: '${_summary!.freeHoursToday.toStringAsFixed(1)} h',
-                              onTap: () => widget.onOpenTab(HomeTabs.schedule),
-                            ),
-                          ),
-                        ],
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.all(16),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
+                  )
+                else if (summary != null) ...[
+                  const SizedBox(height: 18),
                   Row(
                     children: [
                       Expanded(
+                        child: HeaderStatCard(
+                          label: 'Subjects',
+                          value: '${summary.subjectCount}',
+                          onTap: () => widget.onOpenTab(HomeTabs.schedule),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: HeaderStatCard(
+                          label: 'Free today',
+                          value: '${summary.freeHoursToday.toStringAsFixed(1)} h',
+                          onTap: () => widget.onOpenTab(HomeTabs.schedule),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () => _load(repo, showLoader: true),
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
                         child: Text(
                           "Today's classes",
-                          style: Theme.of(context).textTheme.titleMedium,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 17,
+                            color: Color(0xFF1A1A1A),
+                          ),
                         ),
                       ),
                       TextButton.icon(
                         onPressed: () => widget.onOpenTab(HomeTabs.schedule),
-                        icon: const Icon(Icons.open_in_new, size: 18),
+                        icon: const Icon(Icons.open_in_new, size: 16),
                         label: const Text('Open schedule'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF1B5E20),
+                          textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   if (_today.isEmpty)
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('No classes for today.'),
-                            const SizedBox(height: 8),
-                            FilledButton.tonalIcon(
-                              onPressed: () => widget.onOpenTab(HomeTabs.scan),
-                              icon: const Icon(Icons.add),
-                              label: const Text('Add or scan classes'),
-                            ),
-                          ],
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Text(
+                        'No classes scheduled for today.',
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 15,
                         ),
                       ),
                     )
                   else
                     ..._today.map(
-                      (s) => ScheduleClassCard.fromSlot(
+                      (s) => ScheduleCard.fromSlot(
                         slot: s,
+                        leading: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1B5E20).withValues(alpha: 0.12),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.schedule,
+                            color: Color(0xFF1B5E20),
+                            size: 22,
+                          ),
+                        ),
                         onTap: () => showScheduleDetailSheet(
                           context,
                           slot: s,
                           heroTag: 'subject_${s.id}',
                         ),
-                        leading: Icon(
-                          Icons.schedule_rounded,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
                       ),
                     ),
-                  const SizedBox(height: 24),
-                  OutlinedButton.icon(
-                    onPressed: () => _confirmReset(repo),
-                    icon: const Icon(Icons.restart_alt),
-                    label: const Text('Reset'),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
+                  const SizedBox(height: 28),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          'Import a new e-slip',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Clears your saved schedule and profile on this device.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: () => _confirmReset(repo),
+                          icon: const Icon(Icons.restart_alt, size: 18),
+                          label: const Text('Reset & scan again'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF1B5E20),
+                            side: BorderSide(
+                              color: const Color(0xFF1B5E20).withValues(alpha: 0.45),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Clears your schedule and profile so you can scan a new e-slip.',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                  ),
-                  const SizedBox(height: 32),
-                ]),
+                ],
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  const _StatCard({required this.label, required this.value, this.onTap});
-
-  final String label;
-  final String value;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final child = Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 12)),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
           ),
         ],
-      ),
-    );
-    if (onTap == null) return child;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: child,
       ),
     );
   }

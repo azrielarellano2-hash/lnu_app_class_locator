@@ -141,8 +141,12 @@ class AppRepository extends ChangeNotifier {
       subjectTitle: row['subject_title'] as String?,
       instructorName: row['instructor_name'] as String?,
       section: row['section'] as String?,
+      units: row['units'] as String?,
+      lab: row['lab'] as String?,
     );
   }
+
+  Future<List<ScheduleSlot>> allScheduleSlots() => _allSlots();
 
   Future<List<ScheduleSlot>> scheduleToday() async {
     final wd = DateTime.now().weekday - DateTime.monday;
@@ -339,6 +343,8 @@ class AppRepository extends ChangeNotifier {
     String? instructorName,
     String? subjectTitle,
     String? section,
+    String? units,
+    String? lab,
   }) async {
     final days = expandEslipDayToken(dayPattern);
     final start = normalizeTimeString(startTimeRaw);
@@ -376,6 +382,8 @@ class AppRepository extends ChangeNotifier {
         'instructor_name': ins != null && ins.isNotEmpty ? ins : null,
         'subject_title': subTitle != null && subTitle.isNotEmpty ? subTitle : null,
         'section': sec != null && sec.isNotEmpty ? sec : null,
+        'units': units?.trim().isNotEmpty == true ? units!.trim() : null,
+        'lab': lab?.trim().isNotEmpty == true ? lab!.trim() : null,
       });
       n++;
     }
@@ -560,6 +568,8 @@ class AppRepository extends ChangeNotifier {
           instructorName: p.instructor.isNotEmpty ? p.instructor : null,
           subjectTitle: p.subjectTitle.isNotEmpty ? p.subjectTitle : null,
           section: v.section.isNotEmpty ? v.section : null,
+          units: v.units.isNotEmpty ? v.units : null,
+          lab: v.lab.isNotEmpty ? v.lab : null,
         );
         imported++;
       } on FormatException catch (e) {
@@ -618,6 +628,32 @@ class AppRepository extends ChangeNotifier {
 
     final imported = await importValidatedEslipRows(rows);
     for (final v in rows) {
+      final ins = v.instructor.trim();
+      if (ins.isNotEmpty) {
+        await upsertTeacherFromInstructor(ins, subjectCode: v.subjectCode);
+      }
+    }
+    return imported;
+  }
+
+  /// Saves parsed OCR classes directly (one row per enrolment CODE, no review duplicates).
+  Future<int> confirmEslipImportFromOutcome(
+    EslipParseOutcome outcome, {
+    bool replaceSchedule = true,
+  }) async {
+    if (replaceSchedule) await clearScheduleSlots();
+
+    await saveProfile(
+      studentId: outcome.profile.studentId,
+      fullName: outcome.profile.fullName,
+      college: outcome.profile.college,
+      course: outcome.profile.course,
+      section: outcome.profile.section,
+    );
+    await syncStudentFromEslip(outcome.profile);
+
+    final imported = await importValidatedEslipRows(outcome.validatedRows);
+    for (final v in outcome.validatedRows) {
       final ins = v.instructor.trim();
       if (ins.isNotEmpty) {
         await upsertTeacherFromInstructor(ins, subjectCode: v.subjectCode);
