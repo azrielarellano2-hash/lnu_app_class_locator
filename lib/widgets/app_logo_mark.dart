@@ -26,21 +26,15 @@ class AppLogoMark extends StatelessWidget {
       children: [
         DecoratedBox(
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
             color: Colors.white,
+            shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: lightBackground ? 0.18 : 0.28),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
+                color: Colors.black.withOpacity(0.18),
+                blurRadius: 18,
+                offset: const Offset(0, 5),
               ),
             ],
-            border: Border.all(
-              color: lightBackground
-                  ? AppColors.primary.withValues(alpha: 0.12)
-                  : Colors.white.withValues(alpha: 0.5),
-              width: 2,
-            ),
           ),
           child: ClipOval(
             child: Image.asset(
@@ -58,13 +52,34 @@ class AppLogoMark extends StatelessWidget {
         ),
         if (showTagline) ...[
           SizedBox(height: size * 0.08),
-          Text(
-            'Offline-Friendly',
-            style: TextStyle(
-              color: lightBackground ? fg : Colors.white.withValues(alpha: 0.92),
-              fontSize: size * 0.09,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.4,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(100),
+              border: Border.all(color: Colors.white.withOpacity(0.18)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF4ADE80),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 7),
+                Text(
+                  'Works offline',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.75),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

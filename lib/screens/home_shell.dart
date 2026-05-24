@@ -66,26 +66,32 @@ class HomeShellState extends State<HomeShell> {
           ),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: selectTab,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Dashboard',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_month_outlined),
-            selectedIcon: Icon(Icons.calendar_month),
-            label: 'Schedule',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.document_scanner_outlined),
-            selectedIcon: Icon(Icons.document_scanner),
-            label: 'Extractor',
-          ),
-        ],
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: Color(0xFFE5E7EB), width: 1)),
+        ),
+        child: NavigationBar(
+          selectedIndex: _index,
+          onDestinationSelected: selectTab,
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home),
+              label: 'Dashboard',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.calendar_month_outlined),
+              selectedIcon: Icon(Icons.calendar_month),
+              label: 'Schedule',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.document_scanner_outlined),
+              selectedIcon: Icon(Icons.document_scanner),
+              label: 'Extractor',
+            ),
+          ],
+        ),
       ),
     );
   }

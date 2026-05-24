@@ -129,6 +129,7 @@ class _DashboardTabState extends State<DashboardTab> {
       body: Column(
         children: [
           StudentGreenHeader(
+            dashboardHeader: true,
             title: 'Class schedule',
             leading: const Icon(Icons.school_outlined, color: Colors.white, size: 28),
             bottom: Column(
@@ -137,20 +138,21 @@ class _DashboardTabState extends State<DashboardTab> {
                 Text(
                   _greetingLine(user),
                   style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                    height: 1.15,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
                     letterSpacing: -0.3,
+                    color: Colors.white,
+                    height: 1.15,
                   ),
                 ),
                 if (summary != null) ...[
                   const SizedBox(height: 6),
                   Text(
                     summary.greetingDateLocal,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.88),
-                      fontSize: 14,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF86EFAC),
+                      fontWeight: FontWeight.w400,
                     ),
                   ),
                 ],
@@ -206,9 +208,10 @@ class _DashboardTabState extends State<DashboardTab> {
                         child: Text(
                           "Today's classes",
                           style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 17,
-                            color: Color(0xFF1A1A1A),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF111827),
+                            letterSpacing: 0.1,
                           ),
                         ),
                       ),

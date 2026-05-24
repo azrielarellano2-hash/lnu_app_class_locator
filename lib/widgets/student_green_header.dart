@@ -10,12 +10,14 @@ class StudentGreenHeader extends StatelessWidget {
     this.subtitle,
     this.leading,
     this.bottom,
+    this.dashboardHeader = false,
   });
 
   final String title;
   final String? subtitle;
   final Widget? leading;
   final Widget? bottom;
+  final bool dashboardHeader;
 
   static const _deepForest = Color(0xFF06180E);
   static const _leafMid = Color(0xFF1B5E20);
@@ -39,7 +41,15 @@ class StudentGreenHeader extends StatelessWidget {
     final top = MediaQuery.paddingOf(context).top;
     return Container(
       width: double.infinity,
-      decoration: const BoxDecoration(gradient: gradient),
+      decoration: dashboardHeader
+          ? const BoxDecoration(
+              color: Color(0xFF14532D),
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(28),
+                bottomRight: Radius.circular(28),
+              ),
+            )
+          : const BoxDecoration(gradient: gradient),
       padding: EdgeInsets.fromLTRB(16, top + 8, 8, 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -113,28 +123,28 @@ class HeaderStatCard extends StatelessWidget {
     final card = Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+        color: Colors.white.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.12)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             label,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.9),
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
+            style: const TextStyle(
+              fontSize: 11,
+              color: Color(0xFF86EFAC),
+              fontWeight: FontWeight.w400,
             ),
           ),
           const SizedBox(height: 6),
           Text(
             value,
             style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
               color: Colors.white,
-              fontSize: 26,
-              fontWeight: FontWeight.w800,
               height: 1,
             ),
           ),

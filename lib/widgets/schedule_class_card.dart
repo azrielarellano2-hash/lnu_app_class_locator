@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/models.dart';
 import '../models/parsed_schedule_display.dart';
+import '../theme/app_theme.dart';
 import '../utils/eslip_ocr_parser.dart';
 import '../utils/slot_display_mapper.dart';
 
@@ -65,12 +66,7 @@ class ScheduleCard extends StatelessWidget {
         onTap: onTap,
       );
 
-  static const Color _timeGreen = Color(0xFF1B5E20);
-  static const Color _cardFill = Color(0xFFF1F8F2);
   static const Color _cardFillSelected = Color(0xFFE8F5E9);
-  static const Color _descriptionBlack = Color(0xFF1A1A1A);
-  static const Color _roomBlack = Color(0xFF2C2C2C);
-  static const Color _mutedGray = Color(0xFF616161);
 
   @override
   Widget build(BuildContext context) {
@@ -89,12 +85,10 @@ class ScheduleCard extends StatelessWidget {
             timeRange,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              height: 1.2,
-              color: _timeGreen,
-              letterSpacing: -0.2,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.subjectAccent(parsed.subjectCode),
             ),
           ),
           const SizedBox(height: 12),
@@ -105,10 +99,9 @@ class ScheduleCard extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              height: 1.3,
-              color: _descriptionBlack,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF111827),
             ),
           ),
           const SizedBox(height: 10),
@@ -119,10 +112,8 @@ class ScheduleCard extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-              height: 1.25,
-              color: _roomBlack,
+              fontSize: 12,
+              color: Color(0xFF9CA3AF),
             ),
           ),
         ],
@@ -133,10 +124,8 @@ class ScheduleCard extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w400,
-              height: 1.35,
-              color: _mutedGray,
+              fontSize: 12,
+              color: Color(0xFF9CA3AF),
             ),
           ),
         ],
@@ -147,10 +136,8 @@ class ScheduleCard extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w400,
-              height: 1.35,
-              color: _mutedGray,
+              fontSize: 12,
+              color: Color(0xFF9CA3AF),
             ),
           ),
         ],
@@ -176,15 +163,15 @@ class ScheduleCard extends StatelessWidget {
 
     final card = Card(
       margin: EdgeInsets.zero,
-      elevation: isSelected ? 3 : 2,
-      shadowColor: Colors.black26,
-      color: isSelected ? _cardFillSelected : _cardFill,
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      color: isSelected ? _cardFillSelected : Colors.white,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(14),
         side: BorderSide(
           color: isSelected
-              ? const Color(0xFF43A047).withValues(alpha: 0.35)
-              : const Color(0xFFC8E6C9).withValues(alpha: 0.5),
+              ? AppColors.primary.withValues(alpha: 0.35)
+              : const Color(0xFFE5E7EB),
         ),
       ),
       clipBehavior: Clip.antiAlias,

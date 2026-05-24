@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
+import '../theme/app_theme.dart';
 import '../utils/slot_display_mapper.dart';
 
 /// Compact schedule row (code, time, room, chevron) for the weekly list view.
@@ -14,8 +15,6 @@ class ScheduleCompactCard extends StatelessWidget {
   final ScheduleSlot slot;
   final VoidCallback? onTap;
 
-  static const _fill = Color(0xFFF1F8F2);
-
   @override
   Widget build(BuildContext context) {
     final parsed = parsedScheduleFromSlot(slot);
@@ -23,14 +22,22 @@ class ScheduleCompactCard extends StatelessWidget {
         ? parsed.subjectCode
         : slot.subjectName;
     final time = parsed.cardTimeRange;
+    final room = slot.roomCode.trim();
+    final timeRoom = [
+      if (time.isNotEmpty) time,
+      if (room.isNotEmpty) room,
+    ].join(' · ');
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
-        color: _fill,
-        elevation: 1,
-        shadowColor: Colors.black26,
-        borderRadius: BorderRadius.circular(16),
+        color: Colors.white,
+        elevation: 2,
+        shadowColor: const Color(0x07000000),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: Color(0xFFE5E7EB)),
+        ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
@@ -44,30 +51,19 @@ class ScheduleCompactCard extends StatelessWidget {
                     children: [
                       Text(
                         code,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
-                          color: Color(0xFF1A1A1A),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: AppColors.subjectAccent(code),
                         ),
                       ),
-                      if (time.isNotEmpty) ...[
+                      if (timeRoom.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Text(
-                          time,
+                          timeRoom,
                           style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF424242),
-                          ),
-                        ),
-                      ],
-                      if (slot.roomCode.trim().isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          slot.roomCode.trim(),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Color(0xFF616161),
+                            fontSize: 12,
+                            color: Color(0xFF9CA3AF),
                           ),
                         ),
                       ],

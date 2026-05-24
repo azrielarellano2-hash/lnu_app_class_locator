@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_theme.dart';
 import '../widgets/app_logo_mark.dart';
 import 'app_guide_screen.dart';
 
@@ -59,49 +58,46 @@ class WelcomeScreen extends StatelessWidget {
                         lightBackground: false,
                       ),
                       const SizedBox(height: 28),
-                      Text(
+                      const Text(
                         'LNU E-SLIP MANAGER',
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.5,
-                            ),
+                        style: TextStyle(
+                          fontSize: 30,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.5,
+                          color: Colors.white,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         'Leyte Normal University',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.88),
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
+                          color: Colors.white.withOpacity(0.55),
+                          fontWeight: FontWeight.w400,
                         ),
                       ),
                       const SizedBox(height: 44),
                       Center(
                         child: SizedBox(
                           width: 320,
-                          child: FilledButton(
+                          child: ElevatedButton(
                             onPressed: () => _enterApp(context),
-                            style: FilledButton.styleFrom(
+                            style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.white,
-                              foregroundColor: AppColors.primary,
+                              foregroundColor: const Color(0xFF14532D),
+                              elevation: 0,
                               padding: const EdgeInsets.symmetric(vertical: 16),
-                              elevation: 2,
-                              shadowColor: Colors.black26,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
                               ),
-                            ),
-                            child: const Text(
-                              'Enter APP',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 16,
-                                letterSpacing: 0.8,
+                              textStyle: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
+                            child: const Text('Get Started'),
                           ),
                         ),
                       ),

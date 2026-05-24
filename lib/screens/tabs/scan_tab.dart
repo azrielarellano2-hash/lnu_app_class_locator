@@ -161,12 +161,19 @@ class _ScanTabState extends State<ScanTab> {
                 children: [
                   DecoratedBox(
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.95),
-                      borderRadius: BorderRadius.circular(24),
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFF14532D), Color(0xFF16A34A)],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
                       boxShadow: const [
-                        BoxShadow(color: Color(0x28000000), blurRadius: 28, offset: Offset(0, 14)),
+                        BoxShadow(
+                          color: Color(0x22000000),
+                          blurRadius: 16,
+                          offset: Offset(0, 4),
+                        ),
                       ],
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.65)),
                     ),
                     child: Padding(
                       padding: const EdgeInsets.all(20),
@@ -178,9 +185,9 @@ class _ScanTabState extends State<ScanTab> {
                             icon: const Icon(Icons.document_scanner_outlined),
                             label: const Text('Scan e-slip (OCR)'),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: scheme.primary,
+                              foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 14),
-                              side: BorderSide(color: scheme.primary.withValues(alpha: 0.45)),
+                              side: BorderSide(color: Colors.white.withOpacity(0.45)),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                             ),
                           ),
@@ -191,9 +198,9 @@ class _ScanTabState extends State<ScanTab> {
                   const SizedBox(height: 18),
                   DecoratedBox(
                     decoration: BoxDecoration(
-                      color: const Color(0xFFE8F5E9),
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(color: scheme.primary.withValues(alpha: 0.2)),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE5E7EB)),
                     ),
                     child: Padding(
                       padding: const EdgeInsets.all(18),
@@ -221,10 +228,10 @@ class _ScanTabState extends State<ScanTab> {
                             '• Lecture and lab rows stay separate (e.g. IT-121 vs IT-121L).\n'
                             '• Camera: Document Camera "Manual" (crop) or Normal Cam.\n'
                             '• Tip: photograph the full table flat, in good light.',
-                            style: TextStyle(
-                              color: Colors.grey.shade800,
-                              height: 1.45,
-                              fontSize: 13.5,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF6B7280),
+                              height: 1.6,
                             ),
                           ),
                         ],

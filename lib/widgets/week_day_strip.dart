@@ -43,8 +43,11 @@ class WeekDayStrip extends StatelessWidget {
                 width: 56,
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
-                  color: selected ? AppColors.primary : const Color(0xFFE8E8E8),
+                  color: selected ? AppColors.primary : Colors.white,
                   borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: selected ? AppColors.primary : const Color(0xFFE5E7EB),
+                  ),
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -52,10 +55,9 @@ class WeekDayStrip extends StatelessWidget {
                     Text(
                       _labels[i],
                       style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: selected ? Colors.white : Colors.black87,
-                        letterSpacing: 0.3,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: selected ? Colors.white : const Color(0xFF9CA3AF),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -63,8 +65,8 @@ class WeekDayStrip extends StatelessWidget {
                       '${date.day}',
                       style: TextStyle(
                         fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: selected ? Colors.white : Colors.black87,
+                        fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                        color: selected ? Colors.white : const Color(0xFF111827),
                       ),
                     ),
                   ],
