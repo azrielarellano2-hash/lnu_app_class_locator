@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/teacher.dart';
+import '../services/profile_photo_service.dart';
 import '../state/app_repository.dart';
 
 class TeacherProfileScreen extends StatefulWidget {
@@ -39,6 +40,21 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
       _teacher = found;
       _loading = false;
     });
+  }
+
+  Future<void> _pickPhoto() async {
+    final t = _teacher;
+    if (t == null) return;
+    final source = await ProfilePhotoService.chooseImageSource(context);
+    if (!mounted || source == null) return;
+    final path = await const ProfilePhotoService().pickAndPersist(
+      source: source,
+      fileName: 'teacher_${t.id}.jpg',
+    );
+    if (!mounted || path == null) return;
+    final updated = t.copyWith(profilePhotoPath: path);
+    await context.read<AppRepository>().updateTeacher(updated);
+    if (mounted) setState(() => _teacher = updated);
   }
 
   void _openEdit() {
@@ -104,7 +120,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Center(
-                    child: _avatar(t, 56),
+                    child: GestureDetector(
+                      onTap: _pickPhoto,
+                      child: _avatar(t, 56),
+                    ),
                   ),
                   if (t.position != null) ...[
                     const SizedBox(height: 12),

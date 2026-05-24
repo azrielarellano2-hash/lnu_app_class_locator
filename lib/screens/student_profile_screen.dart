@@ -1,10 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../models/student_profile.dart';
+import '../services/profile_photo_service.dart';
 import '../state/app_repository.dart';
 import '../theme/app_theme.dart';
 import 'eslip_printable_view.dart';
@@ -60,11 +60,15 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 
   Future<void> _pickPhoto() async {
     if (_profile == null) return;
-    final repo = context.read<AppRepository>();
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (!mounted || picked == null) return;
-    final updated = _profile!.copyWith(profilePhotoPath: picked.path);
-    await repo.saveStudentProfile(updated);
+    final source = await ProfilePhotoService.chooseImageSource(context);
+    if (!mounted || source == null) return;
+    final path = await const ProfilePhotoService().pickAndPersist(
+      source: source,
+      fileName: 'student_profile.jpg',
+    );
+    if (!mounted || path == null) return;
+    final updated = _profile!.copyWith(profilePhotoPath: path);
+    await context.read<AppRepository>().saveStudentProfile(updated);
     if (mounted) await _load();
   }
 
